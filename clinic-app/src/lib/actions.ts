@@ -9,13 +9,20 @@ const APPOINTMENTS_COLLECTION = 'appointments';
 export function subscribeToActiveClinics(callback: (clinics: any[]) => void) {
   const q = query(
     collection(db, CLINICS_COLLECTION), 
-    where('is_hidden', '==', false),
-    orderBy('created_at', 'desc')
+    where('is_hidden', '==', false)
   );
   
   return onSnapshot(q, (snapshot) => {
-    const clinics = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    let clinics = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    // Sort manually in JS to avoid Firebase Composite Index requirement
+    clinics.sort((a: any, b: any) => {
+       const dateA = a.created_at?.toMillis ? a.created_at.toMillis() : 0;
+       const dateB = b.created_at?.toMillis ? b.created_at.toMillis() : 0;
+       return dateB - dateA;
+    });
     callback(clinics);
+  }, (error) => {
+    console.error("Firebase Snapshot Error (Clinics):", error);
   });
 }
 
