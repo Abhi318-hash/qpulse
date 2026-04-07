@@ -4,11 +4,20 @@ import { subscribeToActiveClinics, subscribeToUserActiveTokens, addPatientToken,
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import Link from 'next/link';
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Users, LayoutDashboard, Settings, Activity, Zap, Hospital, MapPin, Search as SearchIcon, Stethoscope, Star, Heart, QrCode, LogOut, Ticket, Loader2, CalendarPlus, X, History } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="container fade-in" style={{ textAlign: 'center', paddingTop: '50px' }}><Loader2 className="animate-spin" /></div>}>
+      <HomeContent />
+    </Suspense>
+  );
+}
+
+// Need to shift Home() to the bottom, I am patching HomeContent directly
 function HomeContent() {
   const [clinics, setClinics] = useState<any[]>([]);
   const [search, setSearch] = useState('');
@@ -27,6 +36,10 @@ function HomeContent() {
   const [patientAge, setPatientAge] = useState('');
   const [disease, setDisease] = useState('');
   const [isBooking, setIsBooking] = useState(false);
+
+  // Use a Ref to store previous clinics data purely for Notification tracking
+  // without clogging the React render cycle or causing Infinite Loops
+  const clinicsRef = useRef<any[]>([]);
 
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -51,7 +64,7 @@ function HomeContent() {
       // If user is logged in, subscribe to their personal active tokens
       if (user && user.phoneNumber) {
         unsubscribeTokens = subscribeToUserActiveTokens(user.phoneNumber, (tokens) => {
-          setMyTokens(tokens);
+           setMyTokens(tokens);
         });
 
         // Fetch their past history
@@ -64,31 +77,34 @@ function HomeContent() {
       }
     });
 
-    // Subscribe to real-time clinics & handle local notifications
+    // Subscribe to real-time clinics
     const unsubscribeClinics = subscribeToActiveClinics((data) => {
-      setClinics((prevClinics) => {
-        // Find if any clinic advanced its token
-        data.forEach(newClinic => {
-          const oldClinic = prevClinics.find(c => c.id === newClinic.id);
-          if (oldClinic && oldClinic.currently_serving_token !== newClinic.currently_serving_token) {
-            // Check if user has a token here
-            const matchingToken = myTokens.find(t => t.clinic_id === newClinic.id);
-            if (matchingToken && newClinic.currently_serving_token !== '--') {
-              const servingNum = Number(newClinic.currently_serving_token);
-              const userNextTokenNum = Number(matchingToken.token_number);
-              
-              if (!isNaN(servingNum) && !isNaN(userNextTokenNum)) {
-                if (servingNum === userNextTokenNum) {
-                  triggerNotification('🚨 Turn Alert!', `Your token #${userNextTokenNum} is now being called! Please approach the desk.`);
-                } else if (userNextTokenNum - servingNum === 2) {
-                  triggerNotification('⚠️ Be Ready', `Token #${servingNum} is currently serving. You are next in line!`);
-                }
+      // 1. Process local notifications (Side Effect, keep out of setState)
+      data.forEach(newClinic => {
+        const oldClinic = clinicsRef.current.find(c => c.id === newClinic.id);
+        if (oldClinic && oldClinic.currently_serving_token !== newClinic.currently_serving_token) {
+          // Find if user has token
+          const matchingToken = myTokens.find(t => t.clinic_id === newClinic.id);
+          if (matchingToken && newClinic.currently_serving_token !== '--') {
+            const servingNum = Number(newClinic.currently_serving_token);
+            const userNextTokenNum = Number(matchingToken.token_number);
+            
+            if (!isNaN(servingNum) && !isNaN(userNextTokenNum)) {
+              if (servingNum === userNextTokenNum) {
+                triggerNotification('🚨 Turn Alert!', `Your token #${userNextTokenNum} is now being called! Please approach the desk.`);
+              } else if (userNextTokenNum - servingNum === 2) {
+                triggerNotification('⚠️ Be Ready', `Token #${servingNum} is currently serving. You are next in line!`);
               }
             }
           }
-        });
-        return data;
+        }
       });
+
+      // 2. Update Ref for next snapshot comparison
+      clinicsRef.current = data;
+
+      // 3. Update Pure State
+      setClinics(data);
       setLoading(false);
     });
 
@@ -548,10 +564,4 @@ function ClinicCard({ clinic, isFavorite, onFavoriteToggle, onBookClick }: any) 
   );
 }
 
-export default function Home() {
-  return (
-    <Suspense fallback={<div className="container fade-in" style={{ textAlign: 'center', paddingTop: '50px' }}><Loader2 className="animate-spin" /></div>}>
-      <HomeContent />
-    </Suspense>
-  );
-}
+
