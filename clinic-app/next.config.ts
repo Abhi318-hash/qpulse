@@ -7,7 +7,7 @@ const withPWA = require('next-pwa')({
 });
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ['@libsql/client', 'better-sqlite3'],
+  turbopack: {},
 };
 
 export default withPWA(nextConfig);
