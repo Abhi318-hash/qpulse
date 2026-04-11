@@ -7,6 +7,18 @@ import { useRouter } from 'next/navigation';
 export default function UserLoginPage() {
   const router = useRouter();
 
+  React.useEffect(() => {
+    const unsubscribe = import('@/lib/firebase').then(({ auth }) => {
+      import('firebase/auth').then(({ onAuthStateChanged }) => {
+        return onAuthStateChanged(auth, (user) => {
+          if (user) {
+            router.push('/');
+          }
+        });
+      });
+    });
+  }, [router]);
+
   const handleSuccess = (uid: string) => {
     // Phase 1: Authentication successful.
     // In Phase 2, we will hit a backend route to set an HTTP-Only cookie and log them in completely.

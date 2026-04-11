@@ -7,6 +7,18 @@ import { useRouter } from 'next/navigation';
 export default function StaffLoginPage() {
   const router = useRouter();
 
+  React.useEffect(() => {
+    const unsubscribe = import('@/lib/firebase').then(({ auth }) => {
+      import('firebase/auth').then(({ onAuthStateChanged }) => {
+        return onAuthStateChanged(auth, (user) => {
+          if (user) {
+            router.push('/clinic');
+          }
+        });
+      });
+    });
+  }, [router]);
+
   const handleSuccess = (uid: string) => {
     // Phase 1: Authentication successful.
     console.log("Authenticated Staff UID:", uid);

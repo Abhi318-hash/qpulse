@@ -41,6 +41,8 @@ function HomeContent() {
   // without clogging the React render cycle or causing Infinite Loops
   const clinicsRef = useRef<any[]>([]);
 
+  const myTokensRef = useRef<any[]>([]);
+
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -65,6 +67,7 @@ function HomeContent() {
       if (user && user.phoneNumber) {
         unsubscribeTokens = subscribeToUserActiveTokens(user.phoneNumber, (tokens) => {
            setMyTokens(tokens);
+           myTokensRef.current = tokens;
         });
 
         // Fetch their past history
@@ -73,10 +76,18 @@ function HomeContent() {
         });
       } else {
         setMyTokens([]);
+        myTokensRef.current = [];
         setMyHistory([]);
       }
     });
 
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeTokens) unsubscribeTokens();
+    };
+  }, []);
+
+  useEffect(() => {
     // Subscribe to real-time clinics
     const unsubscribeClinics = subscribeToActiveClinics((data) => {
       // 1. Process local notifications (Side Effect, keep out of setState)
@@ -84,7 +95,7 @@ function HomeContent() {
         const oldClinic = clinicsRef.current.find(c => c.id === newClinic.id);
         if (oldClinic && oldClinic.currently_serving_token !== newClinic.currently_serving_token) {
           // Find if user has token
-          const matchingToken = myTokens.find(t => t.clinic_id === newClinic.id);
+          const matchingToken = myTokensRef.current.find(t => t.clinic_id === newClinic.id);
           if (matchingToken && newClinic.currently_serving_token !== '--') {
             const servingNum = Number(newClinic.currently_serving_token);
             const userNextTokenNum = Number(matchingToken.token_number);
@@ -109,11 +120,9 @@ function HomeContent() {
     });
 
     return () => {
-      unsubscribeAuth();
       unsubscribeClinics();
-      if (unsubscribeTokens) unsubscribeTokens();
     };
-  }, [myTokens]); // Add myTokens to dependency array so the closure has the latest tokens
+  }, []); // Run only once on mount
 
   const triggerNotification = (title: string, body: string) => {
     if (!('Notification' in window)) return;

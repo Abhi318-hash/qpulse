@@ -19,29 +19,7 @@ export default function PhoneAuth({ title, subtitle, onSuccess, primaryColor = '
   const [error, setError] = useState('');
   const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
 
-  useEffect(() => {
-    // Initialize reCAPTCHA securely on mount
-    if (typeof window !== 'undefined') {
-      if (!window.recaptchaVerifier) {
-        window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-          size: 'invisible',
-        });
-      }
-    }
-
-    // Cleanup when component unmounts to prevent zombie DOM references
-    return () => {
-      if (window.recaptchaVerifier) {
-        // We clear it out so it re-initializes properly if they visit the page again
-        try {
-          window.recaptchaVerifier.clear();
-          window.recaptchaVerifier = null;
-        } catch (e) {
-          // Ignore clear errors
-        }
-      }
-    };
-  }, []);
+  // reCAPTCHA is now initialized lazily on submit to prevent lag and UI issues on load
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,6 +31,12 @@ export default function PhoneAuth({ title, subtitle, onSuccess, primaryColor = '
       // Clean all spaces and non-numeric characters (except the plus sign)
       const cleanNumber = phoneNumber.replace(/[^0-9+]/g, '');
       const formattedNumber = cleanNumber.startsWith('+') ? cleanNumber : `+91${cleanNumber}`; 
+      
+      if (!window.recaptchaVerifier) {
+        window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+          size: 'invisible',
+        });
+      }
       
       const appVerifier = window.recaptchaVerifier;
       const res = await signInWithPhoneNumber(auth, formattedNumber, appVerifier);
