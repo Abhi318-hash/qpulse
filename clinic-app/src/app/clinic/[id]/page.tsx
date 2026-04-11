@@ -49,9 +49,42 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
 
   // History Modal State
   const [showHistory, setShowHistory] = useState(false);
+  const [historyTab, setHistoryTab] = useState<'LOG' | 'ANALYTICS'>('LOG');
   const [historyData, setHistoryData] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
+
+  const exportToExcel = () => {
+    if (!historyData || historyData.length === 0) {
+      alert("No data available to export.");
+      return;
+    }
+    
+    const headers = ["Date", "Time", "Patient Name", "Phone Number", "Age", "Medical Issue", "Fees Paid (INR)", "Token Ref"];
+    
+    const rows = historyData.map(record => {
+      const dateObj = record.created_at?.toDate ? record.created_at.toDate() : new Date();
+      return [
+        dateObj.toLocaleDateString(),
+        dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+        `"${(record.patient_name || '').replace(/"/g, '""')}"`,
+        `"${record.user_phone ? record.user_phone : 'Walk-In'}"`,
+        record.age || '',
+        `"${(record.disease || '').replace(/"/g, '""')}"`,
+        record.fees || '0',
+        record.token_number || ''
+      ].join(',');
+    });
+    
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `QPULSE_Export_${clinic?.name?.replace(/\s+/g, '_')}_${new Date().toLocaleDateString().replace(/\//g, '-')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   useEffect(() => {
     let unsubscribeData: () => void;
@@ -165,9 +198,10 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
 
   const openHistory = async () => {
     setShowHistory(true);
+    setHistoryTab('LOG');
     setLoadingHistory(true);
     try {
-      const data = await getClinicHistory(id);
+      const data = await getClinicHistory(id, 5000); // Pull up to 5000 records for robust exports/analytics
       setHistoryData(data);
     } catch (err) {
       console.error("Failed to fetch history", err);
@@ -230,9 +264,9 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
                 type="button"
                 onClick={openHistory}
                 className="btn btn-outline"
-                style={{ fontSize: '0.85rem', display: 'flex', gap: '0.4rem', border: '1px solid rgba(255,255,255,0.2)' }}
+                style={{ fontSize: '0.85rem', display: 'flex', gap: '0.4rem', border: '1px solid var(--glass-border)' }}
               >
-                <History size={15} /> Patient Log
+                <History size={15} /> Logs & Analytics
               </button>
               <button
                 type="button"
@@ -479,80 +513,145 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
         }}>
           <div className="glass-card fade-in" style={{ width: '100%', maxWidth: '800px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
             
-            {/* Modal Header */}
-            <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ margin: 0, fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <History size={20} color="var(--accent-primary)" /> Clinic History Log
-              </h2>
-              <button 
-                onClick={() => setShowHistory(false)} 
-                className="btn btn-outline" 
-                style={{ padding: '0.5rem', minWidth: 'auto', border: 'none', color: 'var(--text-secondary)' }}
-              >
-                <X size={24} />
-              </button>
+            {/* Modal Header & Tabs */}
+            <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--glass-border)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <h2 style={{ margin: 0, fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <History size={20} color="var(--accent-primary)" /> Clinic Logs & Analytics
+                </h2>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button onClick={exportToExcel} className="btn btn-outline" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', color: 'var(--success)', borderColor: 'var(--success)' }}>
+                    Download .CSV
+                  </button>
+                  <button onClick={() => setShowHistory(false)} className="btn btn-outline" style={{ padding: '0.4rem', minWidth: 'auto', border: 'none', color: 'var(--text-secondary)' }}>
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+              
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                 <button 
+                   onClick={() => setHistoryTab('LOG')}
+                   style={{ background: 'none', border: 'none', padding: '0.5rem 0', color: historyTab === 'LOG' ? 'var(--accent-primary)' : 'var(--text-secondary)', fontWeight: 700, borderBottom: historyTab === 'LOG' ? '2px solid var(--accent-primary)' : '2px solid transparent', cursor: 'pointer', transition: 'all 0.2s' }}
+                 >
+                   Patient Log
+                 </button>
+                 <button 
+                   onClick={() => setHistoryTab('ANALYTICS')}
+                   style={{ background: 'none', border: 'none', padding: '0.5rem 0', color: historyTab === 'ANALYTICS' ? 'var(--accent-primary)' : 'var(--text-secondary)', fontWeight: 700, borderBottom: historyTab === 'ANALYTICS' ? '2px solid var(--accent-primary)' : '2px solid transparent', cursor: 'pointer', transition: 'all 0.2s' }}
+                 >
+                   Financial Analytics
+                 </button>
+              </div>
             </div>
 
             {/* Modal Body */}
             <div style={{ padding: '1.5rem', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               
-              <div style={{ position: 'relative' }}>
-                <Search style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} size={18} />
-                <input 
-                  type="text"
-                  className="input-field"
-                  placeholder="Search previous patients by name, token, or disease..."
-                  value={historySearch}
-                  onChange={(e) => setHistorySearch(e.target.value)}
-                  style={{ paddingLeft: '2.8rem' }}
-                />
-              </div>
-
               {loadingHistory ? (
                 <div style={{ textAlign: 'center', padding: '3rem' }}>
                   <Loader2 size={30} className="animate-spin" style={{ color: 'var(--accent-primary)', margin: '0 auto 1rem' }} />
-                  <p style={{ color: 'var(--text-secondary)' }}>Securely fetching patient history...</p>
+                  <p style={{ color: 'var(--text-secondary)' }}>Securely fetching clinic data...</p>
                 </div>
-              ) : filteredHistory.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
-                  No historical records found for this criteria.
-                </div>
+              ) : historyTab === 'LOG' ? (
+                // PATIENT LOG TAB
+                <>
+                  <div style={{ position: 'relative' }}>
+                    <Search style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} size={18} />
+                    <input 
+                      type="text" className="input-field"
+                      placeholder="Search previous patients by name, token, or disease..."
+                      value={historySearch} onChange={(e) => setHistorySearch(e.target.value)}
+                      style={{ paddingLeft: '2.8rem' }}
+                    />
+                  </div>
+
+                  {filteredHistory.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
+                      No historical records found for this criteria.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      {filteredHistory.map(record => {
+                        const dateObj = record.created_at?.toDate ? record.created_at.toDate() : new Date();
+                        return (
+                          <div key={record.id} style={{ 
+                            display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', gap: '1rem', padding: '1rem', 
+                            background: 'var(--glass-base)', borderRadius: '8px', border: '1px solid var(--glass-border)', alignItems: 'center'
+                          }}>
+                            <div>
+                              <p style={{ margin: 0, fontWeight: 700, color: 'var(--text-primary)' }}>{record.patient_name}</p>
+                              <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{record.disease} · {record.age}yrs</p>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', fontSize: '0.85rem' }}>
+                               <div>
+                                 <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.7rem', textTransform: 'uppercase' }}>Token Ref</span>
+                                 #{record.token_number}
+                               </div>
+                               <div>
+                                 <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.7rem', textTransform: 'uppercase' }}>Fees Paid</span>
+                                 ₹{record.fees || '0'}
+                               </div>
+                            </div>
+                            <div style={{ textAlign: 'right', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                               <p style={{ margin: '0 0 0.2rem 0' }}>{dateObj.toLocaleDateString()}</p>
+                               <p style={{ margin: 0 }}>{dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  {filteredHistory.map(record => {
-                    const dateObj = record.created_at?.toDate ? record.created_at.toDate() : new Date();
-                    return (
-                      <div key={record.id} style={{ 
-                        display: 'grid', 
-                        gridTemplateColumns: '1fr 2fr 1fr', 
-                        gap: '1rem', 
-                        padding: '1rem', 
-                        background: 'rgba(255,255,255,0.03)', 
-                        borderRadius: '8px', 
-                        border: '1px solid var(--glass-border)',
-                        alignItems: 'center'
-                      }}>
-                        <div>
-                          <p style={{ margin: 0, fontWeight: 700, color: 'var(--text-primary)' }}>{record.patient_name}</p>
-                          <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{record.disease} · {record.age}yrs</p>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', fontSize: '0.85rem' }}>
-                           <div>
-                             <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.7rem', textTransform: 'uppercase' }}>Token Ref</span>
-                             #{record.token_number}
-                           </div>
-                           <div>
-                             <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.7rem', textTransform: 'uppercase' }}>Fees Paid</span>
-                             ₹{record.fees || '0'}
-                           </div>
-                        </div>
-                        <div style={{ textAlign: 'right', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                           <p style={{ margin: '0 0 0.2rem 0' }}>{dateObj.toLocaleDateString()}</p>
-                           <p style={{ margin: 0 }}>{dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
-                        </div>
-                      </div>
-                    );
-                  })}
+                // ANALYTICS TAB
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                  
+                  {/* Metric Cards */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                     <div style={{ background: 'var(--glass-base)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
+                        <p style={{ margin: '0 0 0.5rem 0', color: 'var(--text-secondary)', fontSize: '0.85rem', textTransform: 'uppercase', fontWeight: 600 }}>Total Revenue (All Time)</p>
+                        <h3 style={{ margin: 0, fontSize: '2rem', color: 'var(--success)' }}>
+                           ₹{historyData.reduce((sum, r) => sum + (Number(r.fees) || 0), 0).toLocaleString()}
+                        </h3>
+                     </div>
+                     <div style={{ background: 'var(--glass-base)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
+                        <p style={{ margin: '0 0 0.5rem 0', color: 'var(--text-secondary)', fontSize: '0.85rem', textTransform: 'uppercase', fontWeight: 600 }}>Total Patients Served</p>
+                        <h3 style={{ margin: 0, fontSize: '2rem', color: 'var(--accent-primary)' }}>
+                           {historyData.length}
+                        </h3>
+                     </div>
+                  </div>
+
+                  {/* Recent 7 Days Chart */}
+                  <div style={{ background: 'var(--glass-base)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
+                     <h3 style={{ margin: '0 0 1rem 0', fontSize: '1rem', color: 'var(--text-primary)' }}>7-Day Patient Volume</h3>
+                     <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem', height: '150px', marginTop: '1rem' }}>
+                        {(() => {
+                           const last7Days = Array.from({length: 7}).map((_, i) => {
+                             const d = new Date(); d.setDate(d.getDate() - i); return d.toLocaleDateString();
+                           }).reverse();
+                           
+                           const volumes = last7Days.map(dateStr => {
+                             const count = historyData.filter(r => {
+                               const d = r.created_at?.toDate ? r.created_at.toDate() : new Date();
+                               return d.toLocaleDateString() === dateStr;
+                             }).length;
+                             return { date: dateStr.split('/')[0] + '/' + dateStr.split('/')[1], count }; 
+                           });
+                           const maxVol = Math.max(...volumes.map(v => v.count), 1);
+                           
+                           return volumes.map((vol, idx) => (
+                             <div key={idx} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--accent-primary)', fontWeight: 700 }}>{vol.count > 0 ? vol.count : ''}</div>
+                                <div style={{ width: '100%', maxWidth: '30px', background: vol.count > 0 ? 'var(--accent-primary)' : 'rgba(255,255,255,0.05)', height: `${(vol.count / maxVol) * 100}%`, minHeight: '4px', borderRadius: '4px 4px 0 0', transition: 'height 0.5s ease' }}></div>
+                                <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>{vol.date}</div>
+                             </div>
+                           ));
+                        })()}
+                     </div>
+                  </div>
+
                 </div>
               )}
             </div>
