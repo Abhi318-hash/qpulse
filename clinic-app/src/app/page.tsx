@@ -4,7 +4,7 @@ import { subscribeToActiveClinics, subscribeToUserActiveTokens, addPatientToken,
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import Link from 'next/link';
-import { useState, useEffect, Suspense, useRef } from 'react';
+import React, { useState, useEffect, Suspense, useRef, useMemo, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Users, LayoutDashboard, Settings, Activity, Zap, Hospital, MapPin, Search as SearchIcon, Stethoscope, Star, Heart, QrCode, LogOut, Ticket, Loader2, CalendarPlus, X, History, ChevronDown, ChevronUp, Phone, Clock, UserRound, GraduationCap, IndianRupee } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -156,38 +156,36 @@ function HomeContent() {
     }
   }, [searchParams, favorites, router]);
 
-  const toggleFavorite = (id: string, e: React.MouseEvent) => {
+  const toggleFavorite = useCallback((id: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    let newFavs;
-    if (favorites.includes(id)) {
-      newFavs = favorites.filter(favId => favId !== id);
-    } else {
-      newFavs = [...favorites, id];
-    }
-    setFavorites(newFavs);
-    localStorage.setItem('qpulse_favorites', JSON.stringify(newFavs));
-  };
+    setFavorites(prevFavs => {
+      let newFavs;
+      if (prevFavs.includes(id)) {
+        newFavs = prevFavs.filter(favId => favId !== id);
+      } else {
+        newFavs = [...prevFavs, id];
+      }
+      localStorage.setItem('qpulse_favorites', JSON.stringify(newFavs));
+      return newFavs;
+    });
+  }, []);
 
-  const handleBookClick = (clinic: any) => {
+  const handleBookClick = useCallback((clinic: any) => {
     if (!currentUser) {
       router.push('/login');
       return;
     }
-    // Check if they already have a token for this clinic
     const existing = myTokens.find(t => t.clinic_id === clinic.id);
     if (existing) {
       alert(`You already have active Token #${existing.token_number} at this clinic!`);
       return;
     }
-    
-    // Auto-fill from Profile mappings
     setPatientName(userProfile.name || '');
     setPatientAge(userProfile.age || '');
     setDisease(userProfile.disease || '');
-    
     setBookingClinic(clinic);
-  };
+  }, [currentUser, myTokens, userProfile, router]);
 
   const submitBooking = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -235,14 +233,16 @@ function HomeContent() {
     }
   };
 
-  const filteredClinics = clinics.filter(c => 
-    c.name?.toLowerCase().includes(search.toLowerCase()) ||
-    c.doctor_name?.toLowerCase().includes(search.toLowerCase()) ||
-    c.location?.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredClinics = useMemo(() => 
+    clinics.filter(c => 
+      c.name?.toLowerCase().includes(search.toLowerCase()) ||
+      c.doctor_name?.toLowerCase().includes(search.toLowerCase()) ||
+      c.location?.toLowerCase().includes(search.toLowerCase())
+    ),
+  [clinics, search]);
 
-  const favoriteClinics = clinics.filter(c => favorites.includes(c.id));
-  const otherClinics = filteredClinics.filter(c => !favorites.includes(c.id));
+  const favoriteClinics = useMemo(() => filteredClinics.filter(c => favorites.includes(c.id)), [filteredClinics, favorites]);
+  const otherClinics = useMemo(() => filteredClinics.filter(c => !favorites.includes(c.id)), [filteredClinics, favorites]);
 
   return (
     <main className="container fade-in">
@@ -588,10 +588,12 @@ function HomeContent() {
   );
 }
 
-function ClinicCard({ clinic, isFavorite, onFavoriteToggle, onBookClick }: any) {
+const ClinicCard = React.memo(function ClinicCard({ clinic, isFavorite, onFavoriteToggle, onBookClick }: any) {
   const [showQR, setShowQR] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
-  const patientUrl = typeof window !== 'undefined' ? `${window.location.origin}/?addFavorite=${clinic.id}` : '';
+  
+  // Memoize URL logic
+  const patientUrl = useMemo(() => typeof window !== 'undefined' ? `${window.location.origin}/?addFavorite=${clinic.id}` : '', [clinic.id]);
 
   // Fallbacks for data that might not be in the database yet
   const degrees = clinic.dr_degree || 'MBBS, MD';
@@ -704,7 +706,7 @@ function ClinicCard({ clinic, isFavorite, onFavoriteToggle, onBookClick }: any) 
       </div>
 
       <button 
-        onClick={onBookClick}
+        onClick={() => onBookClick(clinic)}
         disabled={!clinic.is_open}
         className="btn btn-primary" 
         style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', opacity: clinic.is_open ? 1 : 0.5, padding: '1rem' }}
@@ -723,6 +725,4 @@ function ClinicCard({ clinic, isFavorite, onFavoriteToggle, onBookClick }: any) 
       )}
     </div>
   );
-}
-
-
+});

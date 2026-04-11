@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, ArrowRight, Activity, Sun, Moon } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Activity, Sun, Moon, Info } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
@@ -10,7 +10,6 @@ export default function TopNav() {
   const [theme, setTheme] = useState('dark');
 
   useEffect(() => {
-    // Check local storage for theme
     const savedTheme = localStorage.getItem('qpulse_theme');
     if (savedTheme === 'light') {
       setTheme('light');
@@ -58,8 +57,11 @@ export default function TopNav() {
         <span style={{ fontWeight: 800, fontSize: '1.2rem', color: 'var(--accent-primary)', letterSpacing: '1px' }}>Q-PULSE</span>
       </a>
       
-      {/* Theme Toggle Button */}
+      {/* Right Side Tools */}
       <div style={{ display: 'flex', gap: '0.5rem' }}>
+         <Link href="/about" title="About & Bug Reporting" style={{ background: 'var(--btn-glass)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)', padding: '0.5rem', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s', textDecoration: 'none' }}>
+            <Info size={18} />
+         </Link>
          <button onClick={toggleTheme} title="Toggle Theme" style={{ background: 'var(--btn-glass)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)', padding: '0.5rem', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>
             {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
          </button>

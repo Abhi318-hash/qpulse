@@ -120,6 +120,8 @@ a {
   border: 1px solid var(--glass-border);
   border-radius: 20px;
   box-shadow: var(--card-shadow);
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 .glass-card {
@@ -129,10 +131,12 @@ a {
   border-radius: 16px;
   padding: 2rem;
   transition: transform 0.3s ease, background 0.3s ease;
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 .glass-card:hover {
-  transform: translateY(-5px);
+  transform: translateY(-5px) translateZ(0);
   background: var(--glass-bg);
 }
 
@@ -277,4 +281,36 @@ a {
 @keyframes slideInRight {
   from { opacity: 0; transform: translateX(100%); }
   to { opacity: 1; transform: translateX(0); }
+}
+
+/* --- Native PDF & Print Output Classes --- */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  body::before, body::after {
+    display: none !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: flex !important;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: white;
+    z-index: 999999;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    box-sizing: border-box;
+  }
+}
+.print-only {
+  display: none;
 }

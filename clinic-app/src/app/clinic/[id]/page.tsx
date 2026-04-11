@@ -14,7 +14,8 @@ import {
   updateClinicProfile,
   getClinicHistory
 } from '@/lib/actions';
-import { Plus, Power, PowerOff, UserCog, Check, X, MapPin, Stethoscope, Edit2, Loader2, LogOut, FileText, UserPlus, Zap, History, Search, Phone, Clock, GraduationCap, IndianRupee } from 'lucide-react';
+import { Plus, Power, PowerOff, UserCog, Check, X, MapPin, Stethoscope, Edit2, Loader2, LogOut, FileText, UserPlus, Zap, History, Search, Phone, Clock, GraduationCap, IndianRupee, Printer } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import Link from 'next/link';
 
 export default function ClinicRecipientPage({ params }: { params: Promise<{ id: string }> }) {
@@ -247,7 +248,7 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
 
   return (
     <>
-      <div className="container fade-in" style={{ maxWidth: '1000px', width: '100%' }}>
+      <div className="container fade-in no-print" style={{ maxWidth: '1000px', width: '100%' }}>
         {/* Header */}
         <header className="header" style={{ textAlign: 'left', paddingBottom: '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
@@ -260,6 +261,14 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
               </p>
             </div>
             <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="btn btn-outline"
+                style={{ fontSize: '0.85rem', display: 'flex', gap: '0.4rem', border: '1px solid var(--glass-border)' }}
+              >
+                <Printer size={15} /> Print QR Layout
+              </button>
               <button
                 type="button"
                 onClick={openHistory}
@@ -748,6 +757,28 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
           </div>
         </div>
       )}
+
+      {/* Hidden Print Wrapper */}
+      <div className="print-only">
+        <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
+          <h1 style={{ fontSize: '3rem', margin: '0 0 0.5rem 0', fontWeight: 900 }}>{clinic.name}</h1>
+          <p style={{ fontSize: '1.2rem', color: '#555', margin: 0 }}>📍 {clinic.location || 'General Site'}</p>
+        </div>
+        
+        <div style={{ padding: '2rem', border: '4px solid black', borderRadius: '16px', marginBottom: '2rem' }}>
+           <QRCodeSVG 
+             value={`https://qpluse.vercel.app/?clinic=${clinic.id}`}
+             size={350}
+             level={"H"}
+             includeMargin={false}
+           />
+        </div>
+        
+        <div style={{ textAlign: 'center' }}>
+          <h2 style={{ fontSize: '1.8rem', margin: '0 0 0.5rem 0', fontWeight: 800 }}>Scan QR to Queue Up</h2>
+          <p style={{ fontSize: '1.5rem', color: '#444' }}>Or visit: <strong>qpluse.vercel.app</strong></p>
+        </div>
+      </div>
     </>
   );
 }
