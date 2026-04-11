@@ -2,31 +2,71 @@
 
 :root {
   --bg-color: #050505;
+  --bg-grad-1: #1a1a2e;
+  --bg-grad-2: #050505;
+  --nav-bg: rgba(5, 5, 5, 0.8);
+  --glass-base: rgba(255, 255, 255, 0.03);
   --glass-bg: rgba(255, 255, 255, 0.05);
   --glass-border: rgba(255, 255, 255, 0.1);
+  --btn-glass: rgba(255, 255, 255, 0.05);
+  --btn-glass-hover: rgba(255, 255, 255, 0.08);
   --accent-primary: #00d2ff;
   --accent-secondary: #3a7bd5;
   --text-primary: #ffffff;
   --text-secondary: #a0a0a0;
+  --text-muted: rgba(255,255,255,0.2);
   --danger: #ff4d4d;
   --success: #00e676;
   --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+:root[data-theme='light'] {
+  --bg-color: #f0f4f8;
+  --bg-grad-1: #e2e8f0;
+  --bg-grad-2: #ffffff;
+  --nav-bg: rgba(255, 255, 255, 0.85);
+  --glass-base: rgba(255, 255, 255, 0.6);
+  --glass-bg: rgba(255, 255, 255, 0.8);
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --btn-glass: rgba(0, 0, 0, 0.05);
+  --btn-glass-hover: rgba(0, 0, 0, 0.08);
+  --accent-primary: #007bb5;
+  --accent-secondary: #005f8c;
+  --text-primary: #1a1a2e;
+  --text-secondary: #64748b;
+  --text-muted: rgba(0,0,0,0.1);
+  --danger: #e11d48;
+  --success: #059669;
+  --card-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.1);
 }
 
 * {
   box-sizing: border-box;
   padding: 0;
   margin: 0;
+  -webkit-tap-highlight-color: transparent; /* Removes nasty blue highlight on mobile tap */
 }
 
 body {
   font-family: 'Outfit', sans-serif;
-  background: radial-gradient(circle at top left, #1a1a2e, #050505);
+  background: radial-gradient(circle at top left, var(--bg-grad-1), var(--bg-grad-2));
   color: var(--text-primary);
   min-height: 100vh;
   line-height: 1.6;
   overflow-x: hidden;
   position: relative;
+  
+  /* Mobile App UI/UX Enhancements */
+  overscroll-behavior-y: none; /* Disables the 'pull-to-refresh' browser bounce */
+  -webkit-user-select: none; /* Safari */
+  user-select: none; /* Prevents text from being accidentally highlighted while swiping */
+  -webkit-touch-callout: none; /* Disables the long-press popup menu */
+}
+
+/* Ensure form inputs are still completely usable */
+input, textarea {
+  color: var(--text-primary);
+  background: transparent;
 }
 
 body::before {
@@ -37,8 +77,8 @@ body::before {
   width: 100%;
   height: 100%;
   background-image: 
-    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    linear-gradient(var(--glass-base) 1px, transparent 1px),
+    linear-gradient(90deg, var(--glass-base) 1px, transparent 1px);
   background-size: 50px 50px;
   z-index: -1;
   pointer-events: none;
@@ -83,9 +123,9 @@ a {
 }
 
 .glass-card {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--glass-bg);
   backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-border);
   border-radius: 16px;
   padding: 2rem;
   transition: transform 0.3s ease, background 0.3s ease;
@@ -93,7 +133,7 @@ a {
 
 .glass-card:hover {
   transform: translateY(-5px);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--glass-bg);
 }
 
 /* Button & UI Elements */
@@ -128,16 +168,16 @@ a {
 }
 
 .btn-outline:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--btn-glass-hover);
 }
 
 .input-field {
   width: 100%;
   padding: 1rem;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--btn-glass);
   border: 1px solid var(--glass-border);
   border-radius: 12px;
-  color: white;
+  color: var(--text-primary);
   font-family: inherit;
   font-size: 1rem;
   transition: border-color 0.3s ease;
@@ -146,14 +186,15 @@ a {
 .input-field:focus {
   outline: none;
   border-color: var(--accent-primary);
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--btn-glass-hover);
 }
 
 /* Layout Utilities */
 .container {
   max-width: 1100px;
   margin: 0 auto;
-  padding: 2rem;
+  /* Extra bottom padding to clear the iOS home indicator */
+  padding: 2rem 2rem calc(2rem + env(safe-area-inset-bottom)) 2rem;
 }
 
 .grid-clinics {
@@ -231,4 +272,9 @@ a {
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(20px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(100%); }
+  to { opacity: 1; transform: translateX(0); }
 }

@@ -11,9 +11,10 @@ import {
   toggleClinicStatus, 
   subscribeToSingleClinic, 
   updateDoctorName,
+  updateClinicProfile,
   getClinicHistory
 } from '@/lib/actions';
-import { Plus, Power, PowerOff, UserCog, Check, X, MapPin, Stethoscope, Edit2, Loader2, LogOut, FileText, UserPlus, Zap, History, Search } from 'lucide-react';
+import { Plus, Power, PowerOff, UserCog, Check, X, MapPin, Stethoscope, Edit2, Loader2, LogOut, FileText, UserPlus, Zap, History, Search, Phone, Clock, GraduationCap, IndianRupee } from 'lucide-react';
 import Link from 'next/link';
 
 export default function ClinicRecipientPage({ params }: { params: Promise<{ id: string }> }) {
@@ -27,10 +28,14 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [error, setError] = useState('');
 
-  // Editing Doctor
-  const [editingDoctor, setEditingDoctor] = useState(false);
-  const [newDoctorName, setNewDoctorName] = useState('');
-  const [savingDoctor, setSavingDoctor] = useState(false);
+  // Edit Full Profile Modal State
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  
+  const [editData, setEditData] = useState({
+    doctor_name: '', dr_degree: '', specialization: '',
+    fees: '', phone_number: '', operating_hours: ''
+  });
 
   // New Walk-in Patient Form
   const [patientName, setPatientName] = useState('');
@@ -95,21 +100,28 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
     }
   };
 
-  const handleEditDoctor = () => {
-    setNewDoctorName(clinic.doctor_name || '');
-    setEditingDoctor(true);
+  const handleOpenEditProfile = () => {
+    setEditData({
+      doctor_name: clinic.doctor_name || '',
+      dr_degree: clinic.dr_degree || '',
+      specialization: clinic.specialization || '',
+      fees: clinic.fees || '',
+      phone_number: clinic.phone_number || '',
+      operating_hours: clinic.operating_hours || ''
+    });
+    setShowEditProfile(true);
   };
 
-  const handleSaveDoctorName = async () => {
-    if (!newDoctorName.trim()) return;
-    setSavingDoctor(true);
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingProfile(true);
     try {
-      await updateDoctorName(id, newDoctorName.trim(), auth.currentUser?.phoneNumber || 'Staff');
-      setEditingDoctor(false);
+      await updateClinicProfile(id, editData, auth.currentUser?.phoneNumber || 'Staff');
+      setShowEditProfile(false);
     } catch {
-      alert('Failed to update doctor name.');
+      alert('Failed to update clinic profile.');
     } finally {
-      setSavingDoctor(false);
+      setSavingProfile(false);
     }
   };
 
@@ -266,38 +278,31 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
                   <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(0,210,255,0.08)', border: '1px solid rgba(0,210,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <Stethoscope size={14} color="var(--accent-primary)" />
                   </div>
                   <div style={{ flex: 1 }}>
                     <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      Primary Doctor <span style={{ color: 'var(--accent-primary)', fontSize: '0.65rem' }}>(editable)</span>
+                      Primary Doctor
                     </p>
-                    {editingDoctor ? (
-                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem', alignItems: 'center' }}>
-                        <input
-                          type="text"
-                          className="input-field"
-                          value={newDoctorName}
-                          onChange={(e) => setNewDoctorName(e.target.value)}
-                          placeholder="e.g. Dr. Smith"
-                          style={{ padding: '0.4rem 0.75rem', fontSize: '0.9rem', flex: 1 }}
-                          autoFocus
-                        />
-                        <button type="button" onClick={handleSaveDoctorName} disabled={savingDoctor} className="btn btn-primary" style={{ padding: '0.4rem 0.75rem', minWidth: 'auto' }}>
-                          {savingDoctor ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                        </button>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.5rem' }}>
+                      <div>
+                        <p style={{ margin: 0, fontWeight: 700, color: 'var(--text-primary)' }}>{clinic.doctor_name || 'Not set'}</p>
+                        <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--accent-primary)' }}>{clinic.dr_degree || 'MBBS, MD'}</p>
+                        <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{clinic.specialization || 'General Physician'}</p>
                       </div>
-                    ) : (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <p style={{ margin: 0, fontWeight: 600 }}>{clinic.doctor_name || 'Not set'}</p>
-                        <button type="button" onClick={handleEditDoctor} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', padding: '2px' }}>
-                          <Edit2 size={13} />
-                        </button>
-                      </div>
-                    )}
+                      <button type="button" onClick={handleOpenEditProfile} className="btn btn-outline" style={{ fontSize: '0.7rem', padding: '0.3rem 0.5rem', minHeight: 'auto', display: 'flex', gap: '0.3rem' }}>
+                        <Edit2 size={12} /> Edit Profile
+                      </button>
+                    </div>
                   </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)', background: 'rgba(255,255,255,0.02)', padding: '0.8rem', borderRadius: '8px', border: '1px dashed var(--glass-border)' }}>
+                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><IndianRupee size={12} color="var(--success)"/> {clinic.fees || '500'}</div>
+                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Clock size={12} color="var(--accent-secondary)"/> {clinic.operating_hours || '10:00 AM - 6:00 PM'}</div>
+                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', gridColumn: '1/-1' }}><Phone size={12} /> {clinic.phone_number || 'Not set'}</div>
                 </div>
               </div>
             </div>
@@ -552,6 +557,95 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
               )}
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Edit Profile Modal Overlay */}
+      {showEditProfile && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+          background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(10px)',
+          zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '1rem'
+        }}>
+          <div className="glass-card fade-in" style={{ width: '100%', maxWidth: '500px', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
+            
+            <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ margin: 0, fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Edit2 size={20} color="var(--accent-primary)" /> Edit Clinic Profile
+              </h2>
+              <button 
+                onClick={() => setShowEditProfile(false)} 
+                className="btn btn-outline" 
+                style={{ padding: '0.5rem', minWidth: 'auto', border: 'none', color: 'var(--text-secondary)' }}
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveProfile} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              
+              <div>
+                <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '0.3rem', display: 'block' }}>Primary Doctor Name</label>
+                <input 
+                  type="text" className="input-field" required
+                  value={editData.doctor_name} onChange={e => setEditData({...editData, doctor_name: e.target.value})}
+                  placeholder="e.g. Dr. John Smith"
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '0.3rem', display: 'block' }}>Degrees Prefix</label>
+                  <input 
+                    type="text" className="input-field" 
+                    value={editData.dr_degree} onChange={e => setEditData({...editData, dr_degree: e.target.value})}
+                    placeholder="e.g. MBBS, MD"
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '0.3rem', display: 'block' }}>Specialization</label>
+                  <input 
+                    type="text" className="input-field" 
+                    value={editData.specialization} onChange={e => setEditData({...editData, specialization: e.target.value})}
+                    placeholder="e.g. Cardiologist"
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '0.3rem', display: 'block' }}>Contact Phone</label>
+                  <input 
+                    type="text" className="input-field" 
+                    value={editData.phone_number} onChange={e => setEditData({...editData, phone_number: e.target.value})}
+                    placeholder="+91..."
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '0.3rem', display: 'block' }}>Consultation Fee (₹)</label>
+                  <input 
+                    type="number" className="input-field" 
+                    value={editData.fees} onChange={e => setEditData({...editData, fees: e.target.value})}
+                    placeholder="500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '0.3rem', display: 'block' }}>Operating Schedule</label>
+                <input 
+                  type="text" className="input-field" 
+                  value={editData.operating_hours} onChange={e => setEditData({...editData, operating_hours: e.target.value})}
+                  placeholder="e.g. Mon-Sat: 10:00 AM - 6:00 PM"
+                />
+              </div>
+
+              <button type="submit" className="btn btn-primary" disabled={savingProfile} style={{ marginTop: '1rem', padding: '1rem' }}>
+                {savingProfile ? <Loader2 size={18} className="animate-spin" /> : 'Save Profile Changes'}
+              </button>
+
+            </form>
           </div>
         </div>
       )}

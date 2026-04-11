@@ -6,7 +6,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import Link from 'next/link';
 import { useState, useEffect, Suspense, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Users, LayoutDashboard, Settings, Activity, Zap, Hospital, MapPin, Search as SearchIcon, Stethoscope, Star, Heart, QrCode, LogOut, Ticket, Loader2, CalendarPlus, X, History } from 'lucide-react';
+import { Users, LayoutDashboard, Settings, Activity, Zap, Hospital, MapPin, Search as SearchIcon, Stethoscope, Star, Heart, QrCode, LogOut, Ticket, Loader2, CalendarPlus, X, History, ChevronDown, ChevronUp, Phone, Clock, UserRound, GraduationCap, IndianRupee } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
 export default function Home() {
@@ -29,6 +29,10 @@ function HomeContent() {
   const [myTokens, setMyTokens] = useState<any[]>([]);
   const [myHistory, setMyHistory] = useState<any[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(false);
+  
+  // Persistent Profile Form Auto-Fill
+  const [userProfile, setUserProfile] = useState({ name: '', age: '', disease: '' });
   
   // Booking Modal
   const [bookingClinic, setBookingClinic] = useState<any | null>(null);
@@ -55,6 +59,14 @@ function HomeContent() {
       } catch (e) {
         console.error("Failed to parse favorites", e);
       }
+    }
+
+    // Load User Profile Auto-fill mappings
+    const savedProfile = localStorage.getItem('qpulse_user_profile');
+    if (savedProfile) {
+      try {
+        setUserProfile(JSON.parse(savedProfile));
+      } catch (e) {}
     }
 
     let unsubscribeTokens: () => void;
@@ -168,6 +180,12 @@ function HomeContent() {
       alert(`You already have active Token #${existing.token_number} at this clinic!`);
       return;
     }
+    
+    // Auto-fill from Profile mappings
+    setPatientName(userProfile.name || '');
+    setPatientAge(userProfile.age || '');
+    setDisease(userProfile.disease || '');
+    
     setBookingClinic(clinic);
   };
 
@@ -186,6 +204,11 @@ function HomeContent() {
     
     setIsBooking(true);
     try {
+      // Auto-save user profile mapping dynamically if they changed it here
+      const p = { name: patientName, age: patientAge, disease: disease };
+      setUserProfile(p);
+      localStorage.setItem('qpulse_user_profile', JSON.stringify(p));
+
       await addPatientToken(
         bookingClinic.id,
         patientName,
@@ -228,17 +251,9 @@ function HomeContent() {
         {/* Top Bar Auth Status */}
         <div style={{ width: '100%', display: 'flex', justifyContent: 'flex-end', marginBottom: '2rem' }}>
           {currentUser ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <button onClick={() => setShowHistory(true)} className="btn" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', background: 'rgba(0, 210, 255, 0.1)', color: 'var(--accent-primary)', border: '1px solid rgba(0,210,255,0.2)' }}>
-                <History size={12} /> Medical History
-              </button>
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginLeft: '1rem' }}>
-                {currentUser.phoneNumber}
-              </span>
-              <button onClick={() => signOut(auth)} className="btn btn-outline" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem' }}>
-                <LogOut size={12} /> Log Out
-              </button>
-            </div>
+            <button onClick={() => setShowSidebar(true)} className="btn btn-outline" style={{ display: 'flex', gap: '0.6rem', padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
+              <UserRound size={16} color="var(--accent-primary)" /> My Profile
+            </button>
           ) : (
             <button onClick={() => router.push('/login')} className="btn btn-outline" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
               <Users size={14} /> Log In to Book
@@ -248,7 +263,7 @@ function HomeContent() {
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
           <Activity size={48} className="pulse-primary" style={{ color: 'var(--accent-primary)' }} />
-          <h1 style={{ fontSize: '4.5rem', fontWeight: '900', margin: 0, background: 'linear-gradient(to right, #00d2ff, #3a7bd5, #ffffff)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: '-2px' }}>
+          <h1 style={{ fontSize: '4.5rem', fontWeight: '900', margin: 0, color: 'var(--accent-primary)', letterSpacing: '-1px' }}>
             Q-PULSE
           </h1>
         </div>
@@ -349,10 +364,10 @@ function HomeContent() {
       </div>
 
       <footer style={{ marginTop: '5rem', borderTop: '1px solid var(--glass-border)', padding: '2rem 0', display: 'flex', justifyContent: 'center', gap: '2rem' }}>
-        <Link href="/admin/login" className="btn btn-outline" style={{ fontSize: '0.9rem' }}>
+        <Link href="/admin/login" target="_blank" rel="noopener noreferrer" className="btn btn-outline" style={{ fontSize: '0.9rem' }}>
           <Settings size={16} /> Admin Portal
         </Link>
-        <Link href="/clinic/login" className="btn btn-outline" style={{ fontSize: '0.9rem' }}>
+        <Link href="/clinic/login" target="_blank" rel="noopener noreferrer" className="btn btn-outline" style={{ fontSize: '0.9rem' }}>
           <Hospital size={16} /> Staff Portal
         </Link>
         <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', display: 'flex', alignItems: 'center' }}>
@@ -364,7 +379,7 @@ function HomeContent() {
       {bookingClinic && (
         <div style={{
           position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
-          background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(10px)',
+          background: 'var(--nav-bg)', backdropFilter: 'blur(10px)',
           zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '1rem'
         }}>
           <div className="glass-card fade-in" style={{ width: '100%', maxWidth: '500px', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
@@ -432,7 +447,7 @@ function HomeContent() {
       {showHistory && (
         <div style={{
           position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
-          background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(10px)',
+          background: 'var(--nav-bg)', backdropFilter: 'blur(10px)',
           zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '1rem'
         }}>
           <div className="glass-card fade-in" style={{ width: '100%', maxWidth: '800px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
@@ -463,7 +478,7 @@ function HomeContent() {
                       gridTemplateColumns: 'minmax(200px, 1fr) auto auto', 
                       gap: '2rem', 
                       padding: '1.5rem', 
-                      background: 'rgba(255,255,255,0.03)', 
+                      background: 'var(--glass-base)', 
                       borderRadius: '12px', 
                       border: '1px solid var(--glass-border)',
                       alignItems: 'center'
@@ -488,81 +503,218 @@ function HomeContent() {
           </div>
         </div>
       )}
+      {/* User Sidebar Dashboard */}
+      {showSidebar && currentUser && (
+        <div style={{
+          position: 'fixed', top: 0, right: 0, width: '100%', maxWidth: '340px', height: '100%',
+          background: 'var(--nav-bg)', backdropFilter: 'blur(20px)',
+          zIndex: 10000, display: 'flex', flexDirection: 'column', 
+          borderLeft: '1px solid var(--glass-border)',
+          boxShadow: '-10px 0 30px var(--card-shadow)',
+          animation: 'slideInRight 0.3s ease-out'
+        }}>
+          {/* Header */}
+          <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2 style={{ margin: 0, fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <UserRound size={20} color="var(--accent-primary)" /> Dashboard
+            </h2>
+            <button onClick={() => setShowSidebar(false)} className="btn btn-outline" style={{ padding: '0.3rem', minWidth: 'auto', border: 'none' }}>
+              <X size={20} />
+            </button>
+          </div>
+
+          {/* Body */}
+          <div style={{ padding: '2rem 1.5rem', flex: 1, overflowY: 'auto' }}>
+            <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
+              <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(0,210,255,0.1)', border: '1px solid var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem', color: 'var(--accent-primary)' }}>
+                 <UserRound size={32} />
+              </div>
+              <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '1px' }}>Connected Account</p>
+              <h3 style={{ margin: '0.4rem 0 0 0', fontWeight: 600, color: 'var(--text-primary)' }}>{currentUser.phoneNumber}</h3>
+            </div>
+
+            <div style={{ marginBottom: '2.5rem' }}>
+              <h4 style={{ textTransform: 'uppercase', fontSize: '0.75rem', color: 'var(--text-secondary)', letterSpacing: '1px', marginBottom: '1rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                 <Settings size={14} /> Auto-Fill Booking Profile
+              </h4>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+                We'll apply these details directly into your next walk-in forms to save you time. 
+              </p>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Full Name</label>
+                  <input type="text" className="input-field" style={{ padding: '0.8rem 1rem', fontSize: '0.9rem', marginTop: '0.4rem', background: 'var(--glass-base)' }} value={userProfile.name} onChange={e => {
+                     const p = {...userProfile, name: e.target.value};
+                     setUserProfile(p);
+                     localStorage.setItem('qpulse_user_profile', JSON.stringify(p));
+                  }} placeholder="Enter your name" />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1rem' }}>
+                  <div>
+                    <label style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Age</label>
+                    <input type="number" className="input-field" style={{ padding: '0.8rem 1rem', fontSize: '0.9rem', marginTop: '0.4rem', background: 'var(--glass-base)' }} value={userProfile.age} onChange={e => {
+                       const p = {...userProfile, age: e.target.value};
+                       setUserProfile(p);
+                       localStorage.setItem('qpulse_user_profile', JSON.stringify(p));
+                    }} placeholder="Yrs" />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Base Symptom</label>
+                    <input type="text" className="input-field" style={{ padding: '0.8rem 1rem', fontSize: '0.9rem', marginTop: '0.4rem', background: 'var(--glass-base)' }} value={userProfile.disease} onChange={e => {
+                       const p = {...userProfile, disease: e.target.value};
+                       setUserProfile(p);
+                       localStorage.setItem('qpulse_user_profile', JSON.stringify(p));
+                    }} placeholder="e.g. Checkup" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <button onClick={() => { setShowSidebar(false); setShowHistory(true); }} className="btn btn-outline" style={{ width: '100%', padding: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+              <History size={16} /> View Medical History
+            </button>
+          </div>
+
+          {/* Footer */}
+          <div style={{ padding: '1.5rem', borderTop: '1px solid var(--glass-border)' }}>
+            <button onClick={() => { signOut(auth); setShowSidebar(false); }} className="btn" style={{ width: '100%', background: 'rgba(255,77,77,0.1)', color: 'var(--danger)', border: '1px solid rgba(255,77,77,0.2)' }}>
+              <LogOut size={16} /> Log Out securely
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
 
 function ClinicCard({ clinic, isFavorite, onFavoriteToggle, onBookClick }: any) {
   const [showQR, setShowQR] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
   const patientUrl = typeof window !== 'undefined' ? `${window.location.origin}/?addFavorite=${clinic.id}` : '';
 
+  // Fallbacks for data that might not be in the database yet
+  const degrees = clinic.dr_degree || 'MBBS, MD';
+  const specialization = clinic.specialization || 'General Physician';
+  const fees = clinic.fees || '500';
+  const phone = clinic.phone_number || '+91 9876543210';
+  const hours = clinic.operating_hours || '10:00 AM - 6:00 PM';
+
   return (
-    <div className="glass-card" style={{ overflow: 'hidden', borderTop: `4px solid ${clinic.is_open ? 'var(--accent-primary)' : 'var(--danger)'}`, position: 'relative' }}>
-      <button 
-        onClick={(e) => onFavoriteToggle(clinic.id, e)}
-        style={{ position: 'absolute', top: '1rem', right: '3.5rem', background: 'none', border: 'none', cursor: 'pointer', zIndex: 10, padding: '0.5rem' }}
-        title={isFavorite ? "Remove from favorites" : "Add to favorites"}
-      >
-        <Star size={20} fill={isFavorite ? "var(--accent-primary)" : "none"} color={isFavorite ? "var(--accent-primary)" : "var(--text-secondary)"} style={{ transition: 'all 0.2s' }} />
-      </button>
-
-      <button 
-        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowQR(!showQR); }}
-        style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'none', border: 'none', cursor: 'pointer', zIndex: 10, padding: '0.5rem' }}
-        title="Show QR Code"
-      >
-        <QrCode size={20} color={showQR ? "var(--accent-primary)" : "var(--text-secondary)"} style={{ transition: 'all 0.2s' }} />
-      </button>
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
-        <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center' }}>
-          <div style={{ background: 'rgba(0, 210, 255, 0.1)', padding: '0.5rem', borderRadius: '8px' }}>
-            <Hospital size={20} color="var(--accent-primary)" />
-          </div>
-          <div>
-            <h2 style={{ fontSize: '1.4rem', fontWeight: '600', margin: 0 }}>{clinic.name}</h2>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-              <MapPin size={12} /> {clinic.location}
-            </div>
-          </div>
-        </div>
-        <div className={`badge ${clinic.is_open ? 'badge-live' : ''}`} style={!clinic.is_open ? { background: 'rgba(255, 77, 77, 0.1)', color: 'var(--danger)', border: '1px solid rgba(255, 77, 77, 0.2)' } : {}}>
-          {clinic.is_open ? 'Live' : 'Closed'}
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1.5rem', padding: '0.8rem', background: 'rgba(255,255,255,0.02)', borderRadius: '12px' }}>
-        <Stethoscope size={16} color="var(--accent-secondary)" />
-        <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Primary: {clinic.doctor_name}</span>
-      </div>
+    <div className="glass-card" style={{ overflow: 'hidden', borderTop: `4px solid ${clinic.is_open ? 'var(--accent-primary)' : 'var(--danger)'}`, position: 'relative', display: 'flex', flexDirection: 'column' }}>
       
-      <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', padding: '1.5rem 0', background: 'rgba(0,0,0,0.2)', borderRadius: '12px', marginBottom: '1.5rem' }}>
+      {/* Quick Actions (QR & Favorite) */}
+      <div style={{ position: 'absolute', top: '1rem', right: '1rem', display: 'flex', gap: '0.5rem', zIndex: 10 }}>
+        <button 
+          onClick={(e) => onFavoriteToggle(clinic.id, e)}
+          style={{ background: 'var(--btn-glass)', border: '1px solid var(--glass-border)', borderRadius: '50%', cursor: 'pointer', padding: '0.5rem', backdropFilter: 'blur(5px)' }}
+          title={isFavorite ? "Remove from favorites" : "Add to favorites"}
+        >
+          <Star size={16} fill={isFavorite ? "var(--accent-primary)" : "none"} color={isFavorite ? "var(--accent-primary)" : "var(--text-primary)"} style={{ transition: 'all 0.2s' }} />
+        </button>
+        <button 
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowQR(!showQR); }}
+          style={{ background: 'var(--btn-glass)', border: '1px solid var(--glass-border)', borderRadius: '50%', cursor: 'pointer', padding: '0.5rem', backdropFilter: 'blur(5px)' }}
+          title="Show QR Code"
+        >
+          <QrCode size={16} color={showQR ? "var(--accent-primary)" : "var(--text-primary)"} style={{ transition: 'all 0.2s' }} />
+        </button>
+      </div>
+
+      {/* 1. Clinic Header */}
+      <div style={{ marginBottom: '1.2rem', paddingRight: '5rem' }}>
+        <h2 style={{ fontSize: '1.5rem', fontWeight: '800', margin: '0 0 0.4rem 0', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem', letterSpacing: '-0.5px' }}>
+          {clinic.name}
+        </h2>
+        <div className={`badge ${clinic.is_open ? 'badge-live' : ''}`} style={!clinic.is_open ? { background: 'rgba(255, 77, 77, 0.1)', color: 'var(--danger)', border: '1px solid rgba(255, 77, 77, 0.2)' } : {}}>
+          {clinic.is_open ? 'Queue is Live' : 'Clinic Closed'}
+        </div>
+      </div>
+
+      {/* 2. Doctor Lockup & Micro-Badges */}
+      <div style={{ padding: '1.2rem', background: 'var(--glass-base)', borderRadius: '16px', border: '1px solid var(--glass-border)', marginBottom: '1.5rem' }}>
+         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem' }}>
+            <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))', display: 'flex', justifyContent: 'center', alignItems: 'center', color: 'white', flexShrink: 0, boxShadow: '0 4px 15px rgba(0, 210, 255, 0.3)' }}>
+              <UserRound size={24} />
+            </div>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-primary)' }}>{clinic.doctor_name}</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--accent-primary)', fontSize: '0.85rem', marginTop: '0.2rem' }}>
+                 <GraduationCap size={14} /> {degrees}
+              </div>
+            </div>
+         </div>
+         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <span style={{ background: 'rgba(58, 123, 213, 0.1)', color: '#6ab0ff', border: '1px solid rgba(58, 123, 213, 0.3)', padding: '0.3rem 0.8rem', borderRadius: '100px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+              <Stethoscope size={12} /> {specialization}
+            </span>
+            <span style={{ background: 'rgba(0, 230, 118, 0.1)', color: 'var(--success)', border: '1px solid rgba(0, 230, 118, 0.3)', padding: '0.3rem 0.8rem', borderRadius: '100px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+              <IndianRupee size={12} /> {fees} / Visit
+            </span>
+         </div>
+      </div>
+
+      {/* 3. Live Token Pulse (Central Focus) */}
+      <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', padding: '1.5rem 0', background: 'var(--glass-bg)', borderRadius: '16px', marginBottom: '1.5rem', border: '1px solid var(--glass-border)' }}>
         <div style={{ textAlign: 'center' }}>
-          <span style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '0.4rem' }}>Now Serving</span>
-          <strong style={{ fontSize: '2.5rem', color: clinic.is_open ? 'var(--success)' : 'var(--text-secondary)' }}>
+          <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '0.4rem', fontWeight: 600, letterSpacing: '1px' }}>Now Serving</span>
+          <strong style={{ fontSize: '3rem', lineHeight: 1, color: clinic.is_open ? 'var(--success)' : 'var(--text-secondary)' }}>
              {clinic.is_open ? (clinic.currently_serving_token || '--') : '--'}
           </strong>
         </div>
         <div style={{ width: '1px', height: '60px', background: 'var(--glass-border)' }}></div>
         <div style={{ textAlign: 'center' }}>
-          <span style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '0.4rem' }}>Waiting</span>
-          <strong style={{ fontSize: '2.5rem', color: clinic.is_open ? 'var(--accent-primary)' : 'var(--text-secondary)', textShadow: clinic.is_open ? '0 0 20px rgba(0, 210, 255, 0.3)' : 'none' }}>
+          <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '0.4rem', fontWeight: 600, letterSpacing: '1px' }}>Waiting</span>
+          <strong style={{ fontSize: '3rem', lineHeight: 1, color: clinic.is_open ? 'var(--accent-primary)' : 'var(--text-secondary)', textShadow: clinic.is_open ? '0 0 20px rgba(0, 210, 255, 0.3)' : 'none' }}>
              {clinic.is_open ? clinic.patient_count : '--'}
           </strong>
         </div>
+      </div>
+
+      {/* 4. Expandable Details Section */}
+      <div style={{ marginTop: 'auto' }}>
+        <button 
+          onClick={() => setShowDetails(!showDetails)} 
+          style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '0.85rem', padding: '0.8rem', cursor: 'pointer' }}
+        >
+          {showDetails ? 'Hide Details' : 'View Clinic Details'} {showDetails ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </button>
+        
+        {showDetails && (
+          <div style={{ padding: '1rem', background: 'rgba(255, 255, 255, 0.02)', borderRadius: '12px', marginBottom: '1.5rem', animation: 'fadeIn 0.2s ease-out', border: '1px solid var(--glass-border)', display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+            <a href={`https://maps.google.com/?q=${encodeURIComponent(clinic.location)}`} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              <MapPin size={16} color="var(--accent-primary)" style={{ flexShrink: 0, marginTop: '0.1rem' }} />
+              <span>{clinic.location}</span>
+            </a>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              <Clock size={16} color="var(--accent-primary)" style={{ flexShrink: 0 }} />
+              <span>{hours}</span>
+            </div>
+            <a href={`tel:${phone}`} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              <Phone size={16} color="var(--accent-primary)" style={{ flexShrink: 0 }} />
+              <span>{phone}</span>
+            </a>
+          </div>
+        )}
+      </div>
+
+      {/* Transparent Frictionless Booking Warning */}
+      <div style={{ textAlign: 'center', marginBottom: '0.8rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+          <IndianRupee size={10} style={{ display: 'inline', position: 'relative', top: '1px' }} /> {fees} Consultation Fee · Pay at Clinic Desk
       </div>
 
       <button 
         onClick={onBookClick}
         disabled={!clinic.is_open}
         className="btn btn-primary" 
-        style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', opacity: clinic.is_open ? 1 : 0.5 }}
+        style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', opacity: clinic.is_open ? 1 : 0.5, padding: '1rem' }}
       >
-        <CalendarPlus size={18} /> {clinic.is_open ? 'Book Appointment' : 'Currently Closed'}
+        <CalendarPlus size={18} /> {clinic.is_open ? 'Book Token Now' : 'Currently Closed'}
       </button>
 
+      {/* QR Code Reveal */}
       {showQR && (
-        <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--glass-border)', textAlign: 'center', animation: 'slideDown 0.3s ease-out' }}>
+        <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--glass-border)', textAlign: 'center', animation: 'fadeIn 0.3s ease-out' }}>
           <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>Scan this QR on another phone to add it to favorites!</p>
           <div style={{ background: 'white', padding: '1rem', borderRadius: '12px', display: 'inline-block' }}>
             <QRCodeSVG value={patientUrl} size={150} />

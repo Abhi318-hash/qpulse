@@ -113,6 +113,19 @@ export async function updateDoctorName(id: string, doctorName: string, adminPhon
   await logAdminAction(adminPhone, 'UPDATE_DOCTOR', `Updated Doctor Name for clinic ID: ${id} to ${doctorName}`);
 }
 
+export async function updateClinicProfile(id: string, profileData: any, adminPhone: string) {
+  const docRef = doc(db, CLINICS_COLLECTION, id);
+  await updateDoc(docRef, { 
+    doctor_name: (profileData.doctor_name || '').trim(),
+    dr_degree: (profileData.dr_degree || '').trim(),
+    specialization: (profileData.specialization || '').trim(),
+    phone_number: (profileData.phone_number || '').trim(),
+    operating_hours: (profileData.operating_hours || '').trim(),
+    fees: (profileData.fees || '').toString().trim()
+  });
+  await logAdminAction(adminPhone, 'UPDATE_CLINIC_PROFILE', `Updated full profile details for clinic ID: ${id}`);
+}
+
 export async function updateAuthorizedPhone(id: string, phone: string, adminPhone: string) {
   const cleanPhone = phone ? phone.replace(/[^0-9+]/g, '') : '';
   const finalPhone = cleanPhone && !cleanPhone.startsWith('+') ? `+91${cleanPhone}` : cleanPhone;

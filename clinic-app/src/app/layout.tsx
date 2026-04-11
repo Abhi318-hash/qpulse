@@ -21,6 +21,8 @@ export const viewport = {
   viewportFit: "cover",
 };
 
+import TopNav from "@/components/TopNav";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -29,6 +31,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body suppressHydrationWarning={true}>
+        <TopNav />
         {children}
         <Analytics />
         <SpeedInsights />
