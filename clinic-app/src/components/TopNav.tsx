@@ -52,11 +52,11 @@ export default function TopNav() {
         </button>
       </div>
 
-      {/* Centered Logo returning to User View (Home) */}
-      <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', textDecoration: 'none', position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
+      {/* Centered Logo returning to External Landing Page */}
+      <a href="https://qpluse.vercel.app" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', textDecoration: 'none', position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
         <Activity size={20} color="var(--accent-primary)" />
         <span style={{ fontWeight: 800, fontSize: '1.2rem', color: 'var(--accent-primary)', letterSpacing: '1px' }}>Q-PULSE</span>
-      </Link>
+      </a>
       
       {/* Theme Toggle Button */}
       <div style={{ display: 'flex', gap: '0.5rem' }}>
