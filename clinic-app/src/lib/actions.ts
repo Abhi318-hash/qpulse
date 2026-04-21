@@ -113,6 +113,12 @@ export async function updateDoctorName(id: string, doctorName: string, adminPhon
   await logAdminAction(adminPhone, 'UPDATE_DOCTOR', `Updated Doctor Name for clinic ID: ${id} to ${doctorName}`);
 }
 
+export async function updateDoctorProfileImage(clinicId: string, imageUrl: string, staffPhone: string) {
+  const docRef = doc(db, CLINICS_COLLECTION, clinicId);
+  await updateDoc(docRef, { doctor_image_url: imageUrl });
+  await logAdminAction(staffPhone, 'UPDATE_DOCTOR_IMAGE', `Updated doctor profile image for clinic ID: ${clinicId}`);
+}
+
 export async function updateClinicProfile(id: string, profileData: any, adminPhone: string) {
   const docRef = doc(db, CLINICS_COLLECTION, id);
   await updateDoc(docRef, { 

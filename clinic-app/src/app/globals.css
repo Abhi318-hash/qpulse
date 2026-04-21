@@ -1,6 +1,12 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+
+/* ============================================================
+   DESIGN SYSTEM — Q-PULSE CLINIC
+   Dark (default) + Clinical Light (data-theme="light")
+   ============================================================ */
 
 :root {
+  /* Dark glassmorphic (public portal default) */
   --bg-color: #050505;
   --bg-grad-1: #1a1a2e;
   --bg-grad-2: #050505;
@@ -20,63 +26,93 @@
   --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
 }
 
+/* ============================================================
+   CLINICAL LIGHT THEME — matches reference site aesthetic
+   applied via data-theme="light" on <html>
+   ============================================================ */
 :root[data-theme='light'] {
+  /* Canvas */
   --bg-color: #f0f4f8;
-  --bg-grad-1: #e2e8f0;
-  --bg-grad-2: #ffffff;
-  --nav-bg: rgba(255, 255, 255, 0.85);
-  --glass-base: rgba(255, 255, 255, 0.6);
-  --glass-bg: rgba(255, 255, 255, 0.8);
+  --bg-grad-1: #e8f0fe;
+  --bg-grad-2: #f8fafc;
+  --nav-bg: rgba(255, 255, 255, 0.96);
+
+  /* Glass / Cards → pure white cards with soft shadow */
+  --glass-base: rgba(255, 255, 255, 0.7);
+  --glass-bg: #ffffff;
   --glass-border: rgba(0, 0, 0, 0.08);
-  --btn-glass: rgba(0, 0, 0, 0.05);
-  --btn-glass-hover: rgba(0, 0, 0, 0.08);
-  --accent-primary: #007bb5;
-  --accent-secondary: #005f8c;
-  --text-primary: #1a1a2e;
-  --text-secondary: #64748b;
-  --text-muted: rgba(0,0,0,0.1);
-  --danger: #e11d48;
-  --success: #059669;
-  --card-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.1);
+  --btn-glass: rgba(0, 0, 0, 0.04);
+  --btn-glass-hover: rgba(0, 0, 0, 0.07);
+
+  /* Clinical blue accent palette */
+  --accent-primary: #007BFF;
+  --accent-secondary: #0056CC;
+  --accent-teal: #17a2b8;
+  --accent-gradient: linear-gradient(135deg, #007BFF, #0056CC);
+
+  /* Typography */
+  --text-primary: #1a2332;
+  --text-secondary: #5a6a7e;
+  --text-muted: rgba(0,0,0,0.12);
+
+  /* Status */
+  --danger: #dc3545;
+  --success: #28a745;
+  --warning: #ffc107;
+
+  /* Shadows — soft, layered, clinical */
+  --card-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.05);
+  --card-shadow-hover: 0 4px 12px rgba(0,0,0,0.08), 0 16px 40px rgba(0,123,255,0.1);
+  --card-shadow-deep: 0 8px 32px rgba(0,0,0,0.12);
+
+  /* Specific clinic portal tokens */
+  --portal-sidebar: #2c3e50;
+  --portal-sidebar-text: #ecf0f1;
+  --doctor-avatar-ring: #007BFF;
+  --status-open-bg: rgba(40, 167, 69, 0.1);
+  --status-open-border: rgba(40, 167, 69, 0.25);
+  --status-closed-bg: rgba(220, 53, 69, 0.1);
+  --status-closed-border: rgba(220, 53, 69, 0.25);
 }
 
+/* ============================================================
+   BASE RESET
+   ============================================================ */
 * {
   box-sizing: border-box;
   padding: 0;
   margin: 0;
-  -webkit-tap-highlight-color: transparent; /* Removes nasty blue highlight on mobile tap */
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Outfit', 'Inter', sans-serif;
   background: radial-gradient(circle at top left, var(--bg-grad-1), var(--bg-grad-2));
   color: var(--text-primary);
   min-height: 100vh;
   line-height: 1.6;
   overflow-x: hidden;
   position: relative;
-  
-  /* Mobile App UI/UX Enhancements */
-  overscroll-behavior-y: none; /* Disables the 'pull-to-refresh' browser bounce */
-  -webkit-user-select: none; /* Safari */
-  user-select: none; /* Prevents text from being accidentally highlighted while swiping */
-  -webkit-touch-callout: none; /* Disables the long-press popup menu */
+  overscroll-behavior-y: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
-/* Ensure form inputs are still completely usable */
-input, textarea {
+input, textarea, select {
   color: var(--text-primary);
   background: transparent;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
-body::before {
+/* Subtle grid pattern overlay (dark mode only) */
+:root:not([data-theme='light']) body::before {
   content: '';
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-image: 
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background-image:
     linear-gradient(var(--glass-base) 1px, transparent 1px),
     linear-gradient(90deg, var(--glass-base) 1px, transparent 1px);
   background-size: 50px 50px;
@@ -84,21 +120,24 @@ body::before {
   pointer-events: none;
 }
 
-body::after {
+:root:not([data-theme='light']) body::after {
   content: '';
   position: fixed;
   background: radial-gradient(circle at 50% 50%, rgba(0, 210, 255, 0.1), transparent 70%);
-  width: 100vw;
-  height: 100vh;
-  top: 0;
-  left: 0;
+  width: 100vw; height: 100vh;
+  top: 0; left: 0;
   pointer-events: none;
   z-index: -1;
   animation: bgPulse 15s infinite alternate ease-in-out;
 }
 
+/* Light mode background — soft diagonal gradient + warm white canvas */
+:root[data-theme='light'] body {
+  background: linear-gradient(160deg, #f0f6ff 0%, #f8fafc 50%, #eef4fb 100%);
+}
+
 @keyframes bgPulse {
-  0% { transform: scale(1) translate(0, 0); }
+  0%   { transform: scale(1) translate(0, 0); }
   100% { transform: scale(1.2) translate(5%, 5%); }
 }
 
@@ -112,7 +151,9 @@ a {
   color: inherit;
 }
 
-/* Glassmorphism Classes */
+/* ============================================================
+   GLASSMORPHISM CARD — Dark mode baseline
+   ============================================================ */
 .glass-container {
   background: var(--glass-bg);
   backdrop-filter: blur(12px);
@@ -127,23 +168,44 @@ a {
 .glass-card {
   background: var(--glass-bg);
   backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border: 1px solid var(--glass-border);
   border-radius: 16px;
   padding: 2rem;
-  transition: transform 0.3s ease, background 0.3s ease;
+  transition: transform 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
   transform: translateZ(0);
   will-change: transform;
 }
 
 .glass-card:hover {
-  transform: translateY(-5px) translateZ(0);
-  background: var(--glass-bg);
+  transform: translateY(-4px) translateZ(0);
+  box-shadow: var(--card-shadow-hover, var(--card-shadow));
 }
 
-/* Button & UI Elements */
+/* ============================================================
+   CLINICAL CARD — Light mode white card
+   ============================================================ */
+.clinic-card {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: var(--card-shadow);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.clinic-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--card-shadow-hover, var(--card-shadow));
+  border-color: rgba(0, 123, 255, 0.2);
+}
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
 .btn {
-  padding: 0.8rem 1.5rem;
-  border-radius: 12px;
+  padding: 0.75rem 1.5rem;
+  border-radius: 10px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -153,16 +215,23 @@ a {
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
+  font-size: 0.95rem;
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  background: var(--accent-gradient, linear-gradient(135deg, var(--accent-primary), var(--accent-secondary)));
   color: white;
-  box-shadow: 0 4px 15px rgba(0, 210, 255, 0.3);
+  box-shadow: 0 4px 15px rgba(0, 123, 255, 0.3);
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0, 123, 255, 0.4);
 }
 
 .btn-primary:active {
-  transform: scale(0.95);
+  transform: scale(0.97);
+  box-shadow: 0 2px 8px rgba(0, 123, 255, 0.25);
 }
 
 .btn-outline {
@@ -173,39 +242,56 @@ a {
 
 .btn-outline:hover {
   background: var(--btn-glass-hover);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
 }
 
+/* ============================================================
+   INPUTS
+   ============================================================ */
 .input-field {
   width: 100%;
-  padding: 1rem;
+  padding: 0.875rem 1rem;
   background: var(--btn-glass);
-  border: 1px solid var(--glass-border);
-  border-radius: 12px;
+  border: 1.5px solid var(--glass-border);
+  border-radius: 10px;
   color: var(--text-primary);
   font-family: inherit;
-  font-size: 1rem;
-  transition: border-color 0.3s ease;
+  font-size: 0.95rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .input-field:focus {
   outline: none;
   border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
   background: var(--btn-glass-hover);
 }
 
-/* Layout Utilities */
+:root[data-theme='light'] .input-field {
+  background: #f8fafc;
+  border-color: #dee2e8;
+}
+
+:root[data-theme='light'] .input-field:focus {
+  background: #ffffff;
+  border-color: #007BFF;
+}
+
+/* ============================================================
+   LAYOUT UTILITIES
+   ============================================================ */
 .container {
   max-width: 1100px;
   margin: 0 auto;
-  /* Extra bottom padding to clear the iOS home indicator */
   padding: 2rem 2rem calc(2rem + env(safe-area-inset-bottom)) 2rem;
 }
 
 .grid-clinics {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 1.5rem;
-  margin-top: 2rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+  gap: 1.25rem;
+  margin-top: 1.5rem;
 }
 
 .header {
@@ -213,12 +299,16 @@ a {
   text-align: center;
 }
 
+/* ============================================================
+   BADGES & STATUS
+   ============================================================ */
 .badge {
   padding: 0.3rem 0.8rem;
   border-radius: 20px;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 600;
   text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .badge-live {
@@ -232,76 +322,89 @@ a {
 
 .badge-live::before {
   content: '';
-  width: 8px;
-  height: 8px;
+  width: 7px; height: 7px;
   background: var(--success);
   border-radius: 50%;
-  box-shadow: 0 0 10px var(--success);
+  box-shadow: 0 0 8px var(--success);
   animation: pulse 2s infinite;
 }
 
+/* ============================================================
+   DOCTOR AVATAR — utility classes
+   ============================================================ */
+.doctor-avatar-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* Progress ring spin for upload state */
+@keyframes uploadSpin {
+  from { transform: rotate(-90deg); }
+  to   { transform: rotate(270deg); }
+}
+
+/* ============================================================
+   ANIMATIONS
+   ============================================================ */
 @keyframes pulse {
-  0% { transform: scale(0.95); opacity: 0.5; box-shadow: 0 0 0 0 rgba(0, 230, 118, 0.7); }
-  70% { transform: scale(1.1); opacity: 1; box-shadow: 0 0 0 10px rgba(0, 230, 118, 0); }
+  0%   { transform: scale(0.95); opacity: 0.5; box-shadow: 0 0 0 0 rgba(0, 230, 118, 0.7); }
+  70%  { transform: scale(1.1); opacity: 1; box-shadow: 0 0 0 9px rgba(0, 230, 118, 0); }
   100% { transform: scale(0.95); opacity: 0.5; box-shadow: 0 0 0 0 rgba(0, 230, 118, 0); }
 }
 
-.pulse-primary {
-  animation: pulsePrimary 2s infinite;
-}
-
 @keyframes pulsePrimary {
-  0% { transform: scale(1); opacity: 1; filter: drop-shadow(0 0 5px var(--accent-primary)); }
-  50% { transform: scale(1.1); opacity: 0.8; filter: drop-shadow(0 0 15px var(--accent-primary)); }
-  100% { transform: scale(1); opacity: 1; filter: drop-shadow(0 0 5px var(--accent-primary)); }
-}
-
-.pulse-secondary {
-  animation: pulseSecondary 3s infinite;
+  0%   { transform: scale(1); filter: drop-shadow(0 0 5px var(--accent-primary)); }
+  50%  { transform: scale(1.1); filter: drop-shadow(0 0 15px var(--accent-primary)); }
+  100% { transform: scale(1); filter: drop-shadow(0 0 5px var(--accent-primary)); }
 }
 
 @keyframes pulseSecondary {
-  0% { transform: rotate(0deg) scale(1); }
-  25% { transform: rotate(10deg) scale(1.2); }
-  50% { transform: rotate(0deg) scale(1); }
-  75% { transform: rotate(-10deg) scale(1.2); }
+  0%   { transform: rotate(0deg) scale(1); }
+  25%  { transform: rotate(10deg) scale(1.2); }
+  50%  { transform: rotate(0deg) scale(1); }
+  75%  { transform: rotate(-10deg) scale(1.2); }
   100% { transform: rotate(0deg) scale(1); }
 }
 
-/* Animations */
 .fade-in {
-  animation: fadeIn 0.8s ease-out;
+  animation: fadeIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes slideInRight {
   from { opacity: 0; transform: translateX(100%); }
-  to { opacity: 1; transform: translateX(0); }
+  to   { opacity: 1; transform: translateX(0); }
 }
 
-/* --- Native PDF & Print Output Classes --- */
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.pulse-primary  { animation: pulsePrimary 2s infinite; }
+.pulse-secondary { animation: pulseSecondary 3s infinite; }
+
+/* ============================================================
+   PRINT
+   ============================================================ */
 @media print {
   body {
     background: white !important;
     color: black !important;
   }
-  body::before, body::after {
-    display: none !important;
-  }
-  .no-print {
-    display: none !important;
-  }
+  body::before, body::after { display: none !important; }
+  .no-print { display: none !important; }
   .print-only {
     display: flex !important;
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
+    top: 0; left: 0;
+    width: 100vw; height: 100vh;
     background: white;
     z-index: 999999;
     flex-direction: column;
@@ -311,6 +414,157 @@ a {
     box-sizing: border-box;
   }
 }
-.print-only {
-  display: none;
+.print-only { display: none; }
+
+/* ============================================================
+   CLINICAL PORTAL — specific overrides when used inside
+   staff portal  wrapper `.portal-clinical`
+   ============================================================ */
+.portal-clinical {
+  background: linear-gradient(160deg, #f0f6ff 0%, #f8fafc 100%);
+  min-height: 100vh;
+}
+
+.portal-clinical .glass-card {
+  background: #ffffff;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: var(--card-shadow);
+}
+
+.portal-clinical .glass-card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08), 0 16px 40px rgba(0,123,255,0.1);
+  border-color: rgba(0, 123, 255, 0.2);
+}
+
+.portal-clinical .input-field {
+  background: #f8fafc;
+  border-color: #dee2e8;
+  color: #1a2332;
+}
+
+.portal-clinical .input-field:focus {
+  background: #ffffff;
+  border-color: #007BFF;
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
+/* Section label in the clinical portal */
+.section-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+}
+
+/* ============================================================
+   SCROLLBAR — subtle across both themes
+   ============================================================ */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.25); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(128,128,128,0.45); }
+
+/* ============================================================
+   MOBILE RESPONSIVE — Customer Portal & Staff Portal
+   ============================================================ */
+
+/* Tablet ≤ 768px */
+@media (max-width: 768px) {
+  .container {
+    padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom)) 1rem;
+  }
+
+  .grid-clinics {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    margin-top: 1rem;
+  }
+
+  /* Clinic cards full width */
+  .glass-card, .clinic-card {
+    padding: 1.25rem;
+  }
+
+  /* Buttons — full minimum touch target */
+  .btn {
+    min-height: 44px;
+    padding: 0.75rem 1.25rem;
+  }
+
+  /* Inputs — larger on mobile */
+  .input-field {
+    padding: 0.9rem 1rem;
+    font-size: 1rem; /* prevents iOS zoom on focus */
+  }
+
+  /* History / modals — full screen on mobile */
+  .modal-fullscreen-mobile {
+    border-radius: 20px 20px 0 0 !important;
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    max-width: 100% !important;
+    max-height: 90vh !important;
+  }
+}
+
+/* Phone ≤ 480px */
+@media (max-width: 480px) {
+  /* Hero section font scaling */
+  h1 { font-size: clamp(1.8rem, 8vw, 2.5rem) !important; }
+  h2 { font-size: clamp(1.1rem, 5vw, 1.4rem); }
+
+  /* Public page — search bar full width */
+  .container { padding: 0.75rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom)) 0.75rem; }
+
+  /* Clinic card token counter numbers */
+  .token-num { font-size: 2rem !important; }
+
+  /* Nav adjustments */
+  nav { padding: 0 1rem !important; }
+
+  /* Footer links wrap */
+  footer { flex-wrap: wrap; gap: 0.75rem !important; }
+
+  /* Portal stats strip — 2 columns on small phones */
+  .stats-strip {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  /* Modal padding */
+  .modal-body { padding: 1rem !important; }
+}
+
+/* Landscape phone */
+@media (max-height: 500px) and (orientation: landscape) {
+  .container { padding-top: 0.5rem; }
+  .header { padding: 1rem 0; }
+}
+
+/* iOS safe area — notch / home bar support */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  body {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .sticky-bottom {
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* Touch device — remove hover glow effects for performance */
+@media (hover: none) {
+  .glass-card:hover,
+  .clinic-card:hover {
+    transform: none;
+    box-shadow: var(--card-shadow);
+  }
+  .btn-primary:hover {
+    transform: none;
+    box-shadow: 0 4px 15px rgba(0, 123, 255, 0.3);
+  }
 }
