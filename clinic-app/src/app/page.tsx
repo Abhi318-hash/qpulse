@@ -226,122 +226,79 @@ function HomeContent() {
         boxShadow: '0 1px 12px rgba(0,0,0,0.08)',
         transition: 'background 0.3s, border-color 0.3s',
       }}>
-        {/* Outer shell — position:relative so centre logo can be absolute */}
         <div style={{
-          maxWidth: 1100, margin: '0 auto',
-          padding: '0 1rem',
+          width: '100%',
+          padding: '0 1.25rem',
           height: 56,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          position: 'relative',
+          gap: '0.5rem',
+          boxSizing: 'border-box',
         }}>
 
-          {/* ── LEFT: Back · Forward ── */}
-          <div style={{ display: 'flex', gap: '0.35rem', zIndex: 1 }}>
-            <button
-              onClick={() => router.back()}
-              style={iconBtn}
-              title="Go back"
-              aria-label="Back"
+          {/* ══ LEFT: Logo + Back/Forward ══ */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+
+            {/* Q-PULSE logo → external site */}
+            <a
+              href="https://qpluse.vercel.app/"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', textDecoration: 'none', whiteSpace: 'nowrap' }}
             >
+              <Activity size={20} color="#007BFF" />
+              <span style={{ fontWeight: 800, fontSize: isMobile ? '0.95rem' : '1.1rem', color: navText, letterSpacing: '-0.5px', transition: 'color 0.3s' }}>
+                Q-PULSE
+              </span>
+              {!isMobile && (
+                <span style={{ fontSize: '0.62rem', padding: '2px 6px', background: 'rgba(0,123,255,0.1)', color: '#007BFF', borderRadius: '20px', fontWeight: 700, border: '1px solid rgba(0,123,255,0.2)' }}>
+                  LIVE
+                </span>
+              )}
+            </a>
+
+            {/* Divider */}
+            <span style={{ width: 1, height: 20, background: navBorder, display: 'inline-block' }} />
+
+            {/* Back / Forward */}
+            <button onClick={() => router.back()} style={iconBtn} title="Go back" aria-label="Back">
               <ArrowLeft size={16} />
             </button>
-            <button
-              onClick={() => router.forward()}
-              style={iconBtn}
-              title="Go forward"
-              aria-label="Forward"
-            >
+            <button onClick={() => router.forward()} style={iconBtn} title="Go forward" aria-label="Forward">
               <ArrowRight size={16} />
             </button>
           </div>
 
-          {/* ── CENTRE: Logo (always perfectly centred) ── */}
-          <a
-            href="https://qpluse.vercel.app/"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              position: 'absolute',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.45rem',
-              textDecoration: 'none',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            <Activity size={20} color="#007BFF" />
-            <span style={{
-              fontWeight: 800,
-              fontSize: isMobile ? '1rem' : '1.15rem',
-              color: navText,
-              letterSpacing: '-0.5px',
-              transition: 'color 0.3s',
-            }}>
-              Q-PULSE
-            </span>
-            {/* Hide LIVE badge on very small screens to save space */}
-            {!isMobile && (
-              <span style={{
-                fontSize: '0.65rem',
-                padding: '2px 7px',
-                background: 'rgba(0,123,255,0.1)',
-                color: '#007BFF',
-                borderRadius: '20px',
-                fontWeight: 700,
-                border: '1px solid rgba(0,123,255,0.2)',
-              }}>
-                LIVE
-              </span>
-            )}
-          </a>
-
-          {/* ── RIGHT: About · Theme · Auth ── */}
-          <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', zIndex: 1 }}>
+          {/* ══ RIGHT: About · Theme · Auth ══ */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
 
             {/* About */}
-            <Link
-              href="/about"
-              style={iconBtn}
-              title="About Q-PULSE"
-              aria-label="About"
-            >
+            <Link href="/about" style={iconBtn} title="About Q-PULSE" aria-label="About">
               <Info size={16} />
             </Link>
 
-            {/* Dark / Light toggle */}
-            <button
-              onClick={toggleTheme}
-              style={iconBtn}
-              title={isDark ? 'Light mode' : 'Dark mode'}
-              aria-label="Toggle theme"
-            >
-              {isDark
-                ? <Sun size={16} color="#fbbf24" />
-                : <Moon size={16} />}
+            {/* Theme toggle */}
+            <button onClick={toggleTheme} style={iconBtn} title={isDark ? 'Light mode' : 'Dark mode'} aria-label="Toggle theme">
+              {isDark ? <Sun size={16} color="#fbbf24" /> : <Moon size={16} />}
             </button>
 
-            {/* Auth — icon-only on mobile, labelled on desktop */}
+            {/* Auth */}
             {currentUser ? (
               <button
                 onClick={() => setShowSidebar(true)}
                 style={{
                   ...iconBtn,
-                  paddingLeft: isMobile ? '0.45rem' : '0.75rem',
-                  paddingRight: isMobile ? '0.45rem' : '0.75rem',
+                  paddingLeft: isMobile ? '0.45rem' : '0.8rem',
+                  paddingRight: isMobile ? '0.45rem' : '0.8rem',
                   gap: '0.35rem',
                   background: 'rgba(0,123,255,0.08)',
-                  border: '1px solid rgba(0,123,255,0.2)',
+                  border: '1px solid rgba(0,123,255,0.22)',
                   color: '#007BFF',
-                  borderRadius: '8px',
                   fontFamily: 'inherit',
                   fontWeight: 600,
                   fontSize: '0.8rem',
                 }}
-                title="My Profile"
               >
                 <UserRound size={16} />
                 {!isMobile && 'Profile'}
@@ -350,17 +307,13 @@ function HomeContent() {
               <button
                 onClick={() => router.push('/login')}
                 className="btn btn-primary"
-                style={{
-                  fontSize: '0.8rem',
-                  padding: isMobile ? '0.45rem 0.7rem' : '0.45rem 1rem',
-                  minHeight: 36,
-                  minWidth: isMobile ? 36 : undefined,
-                }}
+                style={{ fontSize: '0.8rem', padding: isMobile ? '0.4rem 0.65rem' : '0.4rem 1rem', minHeight: 36 }}
               >
                 {isMobile ? <UserRound size={16} /> : 'Login'}
               </button>
             )}
           </div>
+
         </div>
       </nav>
 
