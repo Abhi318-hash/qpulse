@@ -15,6 +15,11 @@ import {
 } from '@/lib/actions';
 import { checkIsAdmin } from '@/lib/adminAuth';
 import { 
+  findOrCreatePatientByPhone, 
+  createMedicalRecord, 
+  uploadFileToStorage 
+} from '@/lib/patientActions';
+import { 
   Plus, Power, PowerOff, Check, X, MapPin, Stethoscope,
   Edit2, Loader2, LogOut, FileText, UserPlus, Zap, History,
   Search, Phone, Clock, IndianRupee, Printer, GraduationCap,
@@ -51,6 +56,25 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
   const [walkInPhone, setWalkInPhone] = useState(''); // Phase 2: optional SMS
   const [addingToken, setAddingToken] = useState(false);
   const [isAdminUser, setIsAdminUser] = useState(false);
+
+  // Complete Visit (EHR) Modal State
+  const [showCompleteModal, setShowCompleteModal] = useState(false);
+  const [modalDiagnosis, setModalDiagnosis] = useState('');
+  const [modalChiefComplaint, setModalChiefComplaint] = useState('');
+  const [modalBpSystolic, setModalBpSystolic] = useState('');
+  const [modalBpDiastolic, setModalBpDiastolic] = useState('');
+  const [modalHeartRate, setModalHeartRate] = useState('');
+  const [modalTemp, setModalTemp] = useState('');
+  const [modalWeight, setModalWeight] = useState('');
+  const [modalSpo2, setModalSpo2] = useState('');
+  const [modalMedications, setModalMedications] = useState<{ name: string; dosage: string; duration: string; instructions: string }[]>([{ name: '', dosage: '', duration: '', instructions: '' }]);
+  const [modalTests, setModalTests] = useState('');
+  const [modalFollowUp, setModalFollowUp] = useState('');
+  const [modalNotes, setModalNotes] = useState('');
+  const [modalFee, setModalFee] = useState('');
+  const [modalPaymentMode, setModalPaymentMode] = useState('cash');
+  const [modalPrescriptionFile, setModalPrescriptionFile] = useState<File | null>(null);
+  const [isCompleting, setIsCompleting] = useState(false);
 
   // Advancing Queue
   const [advancingId, setAdvancingId] = useState<string | null>(null);
@@ -192,11 +216,82 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
     }
   };
 
-  const handleCallNext = async (appointmentId: string, finalFee: number) => {
-    setAdvancingId(appointmentId);
-    try { await advanceTokenQueue(id, appointmentId, finalFee); }
-    catch (err) { console.error('Failed to advance queue', err); }
-    finally { setAdvancingId(null); }
+  const handleCompleteVisitSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentServing || !clinic) return;
+    setIsCompleting(true);
+
+    try {
+      // 1. Get patient ID via phone or generate anonymous
+      const patientId = await findOrCreatePatientByPhone(
+        currentServing.user_phone,
+        currentServing.patient_name
+      );
+
+      // 2. Upload prescription file if present
+      const prescriptionUrls: string[] = [];
+      if (modalPrescriptionFile) {
+        const { downloadUrl } = await uploadFileToStorage(
+          patientId,
+          modalPrescriptionFile,
+          'prescriptions'
+        );
+        prescriptionUrls.push(downloadUrl);
+      }
+
+      // 3. Construct record data
+      const recordData = {
+        doctorName: clinic.doctor_name || 'Doctor',
+        specialization: clinic.specialization || 'General Physician',
+        chiefComplaint: modalChiefComplaint || currentServing.disease || 'General Checkup',
+        diagnosis: modalDiagnosis || 'Healthy checkup',
+        vitals: {
+          ...(modalBpSystolic ? { bpSystolic: parseInt(modalBpSystolic) } : {}),
+          ...(modalBpDiastolic ? { bpDiastolic: parseInt(modalBpDiastolic) } : {}),
+          ...(modalHeartRate ? { heartRate: parseInt(modalHeartRate) } : {}),
+          ...(modalTemp ? { temperature: parseFloat(modalTemp) } : {}),
+          ...(modalWeight ? { weightKg: parseFloat(modalWeight) } : {}),
+          ...(modalSpo2 ? { spo2: parseInt(modalSpo2) } : {}),
+        },
+        medications: modalMedications.filter(m => m.name.trim() !== ''),
+        testsOrdered: modalTests ? modalTests.split(',').map(t => t.trim()).filter(t => t !== '') : [],
+        followUpDate: modalFollowUp,
+        doctorNotes: modalNotes,
+        consultationFee: parseFloat(modalFee) || clinic.fees || 0,
+        paymentMode: modalPaymentMode,
+        prescriptionImageUrls: prescriptionUrls,
+      };
+
+      // 4. Create medical record
+      await createMedicalRecord(patientId, currentServing.id, id, recordData);
+
+      // 5. Advance token queue
+      await advanceTokenQueue(id, currentServing.id, recordData.consultationFee);
+
+      // Reset states
+      setShowCompleteModal(false);
+      setModalDiagnosis('');
+      setModalChiefComplaint('');
+      setModalBpSystolic('');
+      setModalBpDiastolic('');
+      setModalHeartRate('');
+      setModalTemp('');
+      setModalWeight('');
+      setModalSpo2('');
+      setModalMedications([{ name: '', dosage: '', duration: '', instructions: '' }]);
+      setModalTests('');
+      setModalFollowUp('');
+      setModalNotes('');
+      setModalFee('');
+      setModalPrescriptionFile(null);
+
+      alert('Visit completed and medical record generated successfully!');
+    } catch (err: any) {
+      console.error(err);
+      alert(`Failed to complete visit: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsCompleting(false);
+    }
   };
 
   const openHistory = async () => {
@@ -416,31 +511,17 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
                       {currentServing.age} yrs &nbsp;·&nbsp; {currentServing.disease}
                     </p>
 
-                    <div style={{ marginBottom: '1rem' }}>
-                      <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>
-                        Consultation Fee Charged (₹)
-                      </label>
-                      <input type="number" className="input-field"
-                        placeholder="e.g. 500"
-                        onChange={(e) => { (window as any)._tempFee = parseFloat(e.target.value) || 0; }}
-                        defaultValue={currentServing.fees || ''}
-                        style={{ textAlign: 'center', fontSize: '1.1rem', fontWeight: 700, padding: '0.75rem' }}
-                      />
-                    </div>
-
                     <button
                       onClick={() => {
-                        const fee = (window as any)._tempFee ?? currentServing.fees ?? 0;
-                        handleCallNext(currentServing.id, fee);
-                        (window as any)._tempFee = 0;
+                        setModalFee(currentServing.fees || clinic.fees || '500');
+                        setModalChiefComplaint(currentServing.disease || '');
+                        setShowCompleteModal(true);
                       }}
-                      disabled={advancingId === currentServing.id || !isOpen}
+                      disabled={!isOpen}
                       className="btn btn-primary"
                       style={{ width: '100%', padding: '0.9rem', fontSize: '1rem', fontWeight: 700 }}
                     >
-                      {advancingId === currentServing.id
-                        ? <Loader2 size={20} className="animate-spin" />
-                        : <><Check size={20} /> Finish &amp; Call Next</>}
+                      <Check size={20} /> Complete Visit (EHR)
                     </button>
                   </div>
                 ) : (
@@ -817,6 +898,154 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
 
               <button type="submit" className="btn btn-primary" disabled={savingProfile} style={{ marginTop: '0.5rem', padding: '0.9rem', fontSize: '1rem' }}>
                 {savingProfile ? <Loader2 size={18} className="animate-spin" /> : 'Save Profile Changes'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── COMPLETE VISIT (EHR) MODAL ── */}
+      {showCompleteModal && currentServing && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+          background: 'rgba(10,20,40,0.55)', backdropFilter: 'blur(8px)',
+          zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '1rem'
+        }} onClick={(e) => e.target === e.currentTarget && setShowCompleteModal(false)}>
+          <div className="clinic-card" style={{ width: '100%', maxWidth: 640, maxHeight: '90vh', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 80px rgba(0,0,0,0.2)' }}>
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid #eef0f3', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#1a2332' }}>Complete Visit &amp; Record Vitals — #{currentServing.token_number}</h3>
+              <button onClick={() => setShowCompleteModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#5a6a7e' }}><X size={20} /></button>
+            </div>
+            
+            <form onSubmit={handleCompleteVisitSubmit} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', overflowY: 'auto' }}>
+              
+              {/* Vitals Section */}
+              <div>
+                <h4 style={{ fontSize: '0.75rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.75rem', borderBottom: '1px solid #eef0f3', paddingBottom: '0.25rem' }}>Patient Vitals (Optional)</h4>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem' }}>
+                  <div>
+                    <label style={{ fontSize: '0.65rem', color: '#5a6a7e', textTransform: 'uppercase', display: 'block', marginBottom: '0.25rem' }}>BP Systolic</label>
+                    <input type="number" className="input-field" placeholder="120" value={modalBpSystolic} onChange={e => setModalBpSystolic(e.target.value)} style={{ padding: '0.5rem' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.65rem', color: '#5a6a7e', textTransform: 'uppercase', display: 'block', marginBottom: '0.25rem' }}>BP Diastolic</label>
+                    <input type="number" className="input-field" placeholder="80" value={modalBpDiastolic} onChange={e => setModalBpDiastolic(e.target.value)} style={{ padding: '0.5rem' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.65rem', color: '#5a6a7e', textTransform: 'uppercase', display: 'block', marginBottom: '0.25rem' }}>Heart Rate</label>
+                    <input type="number" className="input-field" placeholder="72" value={modalHeartRate} onChange={e => setModalHeartRate(e.target.value)} style={{ padding: '0.5rem' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.65rem', color: '#5a6a7e', textTransform: 'uppercase', display: 'block', marginBottom: '0.25rem' }}>Temp (°C)</label>
+                    <input type="number" step="0.1" className="input-field" placeholder="37" value={modalTemp} onChange={e => setModalTemp(e.target.value)} style={{ padding: '0.5rem' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.65rem', color: '#5a6a7e', textTransform: 'uppercase', display: 'block', marginBottom: '0.25rem' }}>Weight (kg)</label>
+                    <input type="number" step="0.1" className="input-field" placeholder="70" value={modalWeight} onChange={e => setModalWeight(e.target.value)} style={{ padding: '0.5rem' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.65rem', color: '#5a6a7e', textTransform: 'uppercase', display: 'block', marginBottom: '0.25rem' }}>SpO2 (%)</label>
+                    <input type="number" className="input-field" placeholder="98" value={modalSpo2} onChange={e => setModalSpo2(e.target.value)} style={{ padding: '0.5rem' }} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Chief Complaint & Diagnosis */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Chief Complaint</label>
+                  <input type="text" required className="input-field" value={modalChiefComplaint} onChange={e => setModalChiefComplaint(e.target.value)} placeholder="e.g. Fever, Sore Throat" />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Diagnosis</label>
+                  <input type="text" required className="input-field" value={modalDiagnosis} onChange={e => setModalDiagnosis(e.target.value)} placeholder="e.g. Acute Pharyngitis" />
+                </div>
+              </div>
+
+              {/* Medications Table */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <h4 style={{ fontSize: '0.75rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700 }}>Prescribed Medications</h4>
+                  <button type="button" className="btn btn-outline" style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem', minHeight: 'unset' }}
+                    onClick={() => setModalMedications([...modalMedications, { name: '', dosage: '', duration: '', instructions: '' }])}>
+                    <Plus size={10} /> Add Medication
+                  </button>
+                </div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {modalMedications.map((med, index) => (
+                    <div key={index} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1.5fr auto', gap: '0.4rem', alignItems: 'center' }}>
+                      <input type="text" className="input-field" placeholder="Medication" value={med.name} onChange={e => {
+                        const updated = [...modalMedications];
+                        updated[index].name = e.target.value;
+                        setModalMedications(updated);
+                      }} style={{ padding: '0.4rem' }} required={index === 0} />
+                      
+                      <input type="text" className="input-field" placeholder="Dosage" value={med.dosage} onChange={e => {
+                        const updated = [...modalMedications];
+                        updated[index].dosage = e.target.value;
+                        setModalMedications(updated);
+                      }} style={{ padding: '0.4rem' }} />
+                      
+                      <input type="text" className="input-field" placeholder="Duration" value={med.duration} onChange={e => {
+                        const updated = [...modalMedications];
+                        updated[index].duration = e.target.value;
+                        setModalMedications(updated);
+                      }} style={{ padding: '0.4rem' }} />
+                      
+                      <input type="text" className="input-field" placeholder="Instructions" value={med.instructions} onChange={e => {
+                        const updated = [...modalMedications];
+                        updated[index].instructions = e.target.value;
+                        setModalMedications(updated);
+                      }} style={{ padding: '0.4rem' }} />
+
+                      {modalMedications.length > 1 && (
+                        <button type="button" onClick={() => setModalMedications(modalMedications.filter((_, i) => i !== index))}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc3545', display: 'flex' }}>
+                          <X size={16} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Tests & Notes & Follow Up */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Ordered Tests (comma separated)</label>
+                  <input type="text" className="input-field" value={modalTests} onChange={e => setModalTests(e.target.value)} placeholder="e.g. CBC, Lipid Profile" />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Follow-up Date</label>
+                  <input type="date" className="input-field" value={modalFollowUp} onChange={e => setModalFollowUp(e.target.value)} />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Consultation Fee Charged (₹)</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem' }}>
+                  <input type="number" required className="input-field" value={modalFee} onChange={e => setModalFee(e.target.value)} placeholder="e.g. 500" />
+                  <select className="input-field" value={modalPaymentMode} onChange={e => setModalPaymentMode(e.target.value)} style={{ height: '46px' }}>
+                    <option value="cash">Cash</option>
+                    <option value="upi">UPI / Online</option>
+                    <option value="card">Card</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Doctor Notes</label>
+                <textarea className="input-field" rows={2} value={modalNotes} onChange={e => setModalNotes(e.target.value)} placeholder="Additional clinical notes..." style={{ resize: 'none' }} />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Upload Prescription Photo (optional)</label>
+                <input type="file" accept="image/*,application/pdf" onChange={e => setModalPrescriptionFile(e.target.files?.[0] || null)} style={{ fontSize: '0.85rem' }} />
+              </div>
+
+              <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '0.9rem', fontSize: '1rem', fontWeight: 700 }} disabled={isCompleting}>
+                {isCompleting ? <Loader2 size={20} className="animate-spin" /> : 'Finalize and Call Next Patient'}
               </button>
             </form>
           </div>

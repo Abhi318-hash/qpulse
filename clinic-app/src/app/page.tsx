@@ -1,12 +1,12 @@
 'use client'
 
-import { subscribeToActiveClinics, subscribeToUserActiveTokens, addPatientToken, cancelUserToken, getUserMedicalHistory, saveFcmToken } from '@/lib/actions';
+import { subscribeToActiveClinics, subscribeToUserActiveTokens, addPatientToken, cancelUserToken, getUserMedicalHistory, saveFcmToken, ensurePatientProfile } from '@/lib/actions';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import Link from 'next/link';
 import React, { useState, useEffect, Suspense, useRef, useMemo, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Settings, Activity, Hospital, MapPin, Search as SearchIcon, Stethoscope, Star, Heart, QrCode, LogOut, Ticket, Loader2, CalendarPlus, X, History, ChevronDown, ChevronUp, Phone, Clock, UserRound, IndianRupee, CheckCircle, ArrowLeft, ArrowRight, Info, Sun, Moon, Bell } from 'lucide-react';
+import { Settings, Activity, Hospital, MapPin, Search as SearchIcon, Stethoscope, Star, Heart, QrCode, LogOut, Ticket, Loader2, CalendarPlus, X, History, ChevronDown, ChevronUp, Phone, Clock, UserRound, IndianRupee, CheckCircle, ArrowLeft, ArrowRight, Info, Sun, Moon, Bell, FilePlus } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
 export default function Home() {
@@ -150,6 +150,7 @@ function HomeContent() {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
       if (user && user.phoneNumber) {
+        ensurePatientProfile(user.uid, user.phoneNumber);
         unsubscribeTokens = subscribeToUserActiveTokens(user.phoneNumber, (tokens) => {
           setMyTokens(tokens);
           myTokensRef.current = tokens;
@@ -325,10 +326,10 @@ function HomeContent() {
               {isDark ? <Sun size={16} color="#fbbf24" /> : <Moon size={16} />}
             </button>
 
-            {/* Auth */}
+             {/* Auth */}
             {currentUser ? (
               <button
-                onClick={() => setShowSidebar(true)}
+                onClick={() => router.push('/profile')}
                 style={{
                   ...iconBtn,
                   paddingLeft: isMobile ? '0.45rem' : '0.8rem',
@@ -402,6 +403,17 @@ function HomeContent() {
       </section>
 
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 2rem 4rem' }}>
+
+        {/* Recent Visit Upload Prompt */}
+        {currentUser && myHistory.length > 0 && (
+          <RecentVisitUploadPrompt 
+            visit={myHistory[0]} 
+            currentUser={currentUser} 
+            onUploadSuccess={() => {
+              getUserMedicalHistory(currentUser.phoneNumber).then(history => setMyHistory(history));
+            }}
+          />
+        )}
 
         {/* ── ACTIVE TOKENS ─────────────────────────────── */}
         {myTokens.length > 0 && (
@@ -803,3 +815,110 @@ const ClinicCard = React.memo(function ClinicCard({ clinic, isFavorite, onFavori
     </div>
   );
 });
+
+function RecentVisitUploadPrompt({ visit, currentUser, onUploadSuccess }: { visit: any, currentUser: any, onUploadSuccess: () => void }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+
+  // Check if already uploaded or dismissed
+  if (dismissed || visit.prescription_uploaded || visit.status !== 'COMPLETED') return null;
+
+  // Only show if completed in the last 48 hours
+  const completedDate = visit.completed_at?.toDate ? visit.completed_at.toDate() : (visit.created_at?.toDate ? visit.created_at.toDate() : new Date());
+  const hoursSinceCompletion = (Date.now() - completedDate.getTime()) / 3600000;
+  if (hoursSinceCompletion > 48) return null;
+
+  const handleUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!file || !currentUser) return;
+    setUploading(true);
+    try {
+      const { uploadFileToStorage, addPatientPrescriptionDocument } = await import('@/lib/patientActions');
+      const { doc, updateDoc } = await import('firebase/firestore');
+      const { db } = await import('@/lib/firebase');
+
+      // 1. Upload to storage
+      const { downloadUrl, storagePath } = await uploadFileToStorage(
+        currentUser.uid,
+        file,
+        'prescriptions'
+      );
+
+      // 2. Add prescription record
+      await addPatientPrescriptionDocument(currentUser.uid, {
+        fileUrl: downloadUrl,
+        storagePath,
+        fileName: file.name,
+        fileSizeBytes: file.size,
+        mimeType: file.type,
+        clinicId: visit.clinic_id,
+        doctorName: visit.doctor_name || '',
+        notes: `Uploaded from home page for visit on ${completedDate.toLocaleDateString()}`
+      });
+
+      // 3. Mark appointment as prescription uploaded
+      await updateDoc(doc(db, 'appointments', visit.id), {
+        prescription_uploaded: true
+      });
+
+      alert('Prescription uploaded successfully!');
+      onUploadSuccess();
+    } catch (err) {
+      console.error(err);
+      alert('Failed to upload prescription.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div style={{
+      background: 'rgba(0,123,255,0.06)',
+      border: '1px solid rgba(0,123,255,0.18)',
+      borderRadius: '16px',
+      padding: '1.25rem 1.5rem',
+      marginBottom: '2rem',
+      position: 'relative',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '0.75rem'
+    }}>
+      <button 
+        onClick={() => setDismissed(true)} 
+        style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'none', border: 'none', cursor: 'pointer', color: '#5a6a7e' }}
+      >
+        <X size={16} />
+      </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <div style={{ padding: '0.4rem', background: 'rgba(0,123,255,0.1)', borderRadius: '8px' }}>
+          <FilePlus size={18} color="#007BFF" />
+        </div>
+        <div>
+          <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 700, color: '#1a2332' }}>Recent Visit Prescription</h4>
+          <p style={{ margin: 0, fontSize: '0.78rem', color: '#5a6a7e' }}>
+            Upload your prescription for your visit on {completedDate.toLocaleDateString()} to save it to your secure health history.
+          </p>
+        </div>
+      </div>
+      <form onSubmit={handleUpload} style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
+        <input 
+          type="file" 
+          required 
+          accept="image/*,application/pdf"
+          onChange={e => setFile(e.target.files?.[0] || null)}
+          style={{ fontSize: '0.8rem' }}
+          disabled={uploading}
+        />
+        <button 
+          type="submit" 
+          className="btn btn-primary" 
+          style={{ padding: '0.45rem 1rem', fontSize: '0.8rem', minHeight: 'unset' }}
+          disabled={uploading || !file}
+        >
+          {uploading ? <Loader2 size={14} className="animate-spin" /> : 'Upload'}
+        </button>
+      </form>
+    </div>
+  );
+}
