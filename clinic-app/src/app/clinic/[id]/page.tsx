@@ -13,6 +13,7 @@ import {
   updateClinicProfile,
   getClinicHistory
 } from '@/lib/actions';
+import { checkIsAdmin } from '@/lib/adminAuth';
 import { 
   Plus, Power, PowerOff, Check, X, MapPin, Stethoscope,
   Edit2, Loader2, LogOut, FileText, UserPlus, Zap, History,
@@ -42,12 +43,14 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
     fees: '', phone_number: '', operating_hours: ''
   });
 
-  // New Walk-in Patient Form
+  // Walk-in Patient Form (Phase 2: added walkInPhone for SMS notifications)
   const [patientName, setPatientName] = useState('');
   const [patientAge, setPatientAge] = useState('');
   const [fees, setFees] = useState('');
   const [disease, setDisease] = useState('');
+  const [walkInPhone, setWalkInPhone] = useState(''); // Phase 2: optional SMS
   const [addingToken, setAddingToken] = useState(false);
+  const [isAdminUser, setIsAdminUser] = useState(false);
 
   // Advancing Queue
   const [advancingId, setAdvancingId] = useState<string | null>(null);
@@ -91,27 +94,36 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
   useEffect(() => {
     let unsubscribeData: () => void;
     let unsubscribeRoster: () => void;
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       if (!user) {
         router.push('/clinic/login');
-      } else {
-        setLoadingAuth(false);
-        unsubscribeData = subscribeToSingleClinic(id, (data) => {
-          if (!data) {
-            setError('Clinic not found.');
-          } else if (data.authorized_phone && data.authorized_phone !== user.phoneNumber && process.env.NEXT_PUBLIC_ADMIN_PHONE !== user.phoneNumber) {
-            setError('ACCESS DENIED: Your phone number is not authorized to manage this clinic.');
-          } else {
-            setClinic(data);
-            setError('');
-          }
-          setLoadingConfig(false);
-        });
-        unsubscribeRoster = subscribeToClinicRoster(id, (apps) => {
-          setRoster(apps);
-          setLoadingConfig2(false);
-        });
+        return;
       }
+      setLoadingAuth(false);
+
+      // Check admin status (for override access)
+      const adminStatus = await checkIsAdmin(user.phoneNumber);
+      setIsAdminUser(adminStatus);
+
+      unsubscribeData = subscribeToSingleClinic(id, (data) => {
+        if (!data) {
+          setError('Clinic not found.');
+        } else if (
+          data.authorized_phone &&
+          data.authorized_phone !== user.phoneNumber &&
+          !adminStatus
+        ) {
+          setError('ACCESS DENIED: Your phone number is not authorized to manage this clinic.');
+        } else {
+          setClinic(data);
+          setError('');
+        }
+        setLoadingConfig(false);
+      });
+      unsubscribeRoster = subscribeToClinicRoster(id, (apps) => {
+        setRoster(apps);
+        setLoadingConfig2(false);
+      });
     });
     return () => {
       unsubscribeAuth();
@@ -156,8 +168,22 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
     if (!patientName || !clinic) return;
     setAddingToken(true);
     try {
-      await addPatientToken(id, patientName, parseInt(patientAge) || 0, parseFloat(fees) || 0, disease || 'General');
-      setPatientName(''); setPatientAge(''); setFees(''); setDisease('');
+      // Clean & format optional walk-in phone for SMS notifications (Phase 2)
+      let cleanPhone = '';
+      if (walkInPhone) {
+        const stripped = walkInPhone.replace(/[^0-9+]/g, '');
+        cleanPhone = stripped.startsWith('+') ? stripped : `+91${stripped}`;
+      }
+      await addPatientToken(
+        id,
+        patientName,
+        parseInt(patientAge) || 0,
+        parseFloat(fees) || 0,
+        disease || 'General',
+        cleanPhone,
+        'staff'
+      );
+      setPatientName(''); setPatientAge(''); setFees(''); setDisease(''); setWalkInPhone('');
     } catch (err) {
       console.error(err);
       alert('Failed to generate token.');
@@ -460,6 +486,12 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
                     placeholder="Medical Issue / Disease"
                     value={disease} onChange={e => setDisease(e.target.value)}
                     disabled={!isOpen || addingToken}
+                  />
+                  <input type="tel" className="input-field"
+                    placeholder="Patient Phone (optional — for SMS alerts)"
+                    value={walkInPhone} onChange={e => setWalkInPhone(e.target.value)}
+                    disabled={!isOpen || addingToken}
+                    style={{ fontSize: '0.88rem' }}
                   />
                   <button type="submit" className="btn btn-primary"
                     disabled={!isOpen || addingToken || !patientName}

@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { addClinic, hideClinic, unhideClinic, subscribeToAllClinicsAdmin, subscribeToAuditLogs } from '@/lib/actions';
+import { addClinic, hideClinic, unhideClinic, subscribeToAllClinicsAdmin, subscribeToAuditLogs, logAdminAction } from '@/lib/actions';
+import { checkIsAdmin } from '@/lib/adminAuth';
 import { EyeOff, Eye, Plus, Copy, CheckCircle, Loader2, QrCode, User, ShieldCheck, Printer, LogOut, Activity, FileText } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -27,31 +28,33 @@ export default function AdminPage() {
     let unsubscribeData: () => void;
     let unsubscribeLogs: () => void;
 
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       if (!user) {
-        // Not logged in -> redirect to admin login
         router.push('/admin/login');
-      } else {
-        // Security Check: Make sure the logged-in user is an approved Administrator
-        const allowedAdmins = (process.env.NEXT_PUBLIC_ADMIN_PHONE || '').split(',').map(s => s.trim());
-        if (!user.phoneNumber || !allowedAdmins.includes(user.phoneNumber)) {
-          alert('ACCESS DENIED: You are not an approved System Administrator.');
-          signOut(auth);
-          router.push('/admin/login');
-          return;
-        }
-        setLoadingAuth(false);
-
-        // Fetch Clinics
-        unsubscribeData = subscribeToAllClinicsAdmin((data) => {
-          setClinics(data);
-        });
-
-        // Fetch Audit Logs
-        unsubscribeLogs = subscribeToAuditLogs((logs) => {
-          setAuditLogs(logs);
-        });
+        return;
       }
+
+      // ── Secure admin check: reads from Firestore `admins` collection ──
+      // This is NOT a client-side env var check — it's server-authoritative.
+      const isAdmin = await checkIsAdmin(user.phoneNumber);
+      if (!isAdmin) {
+        alert('ACCESS DENIED: You are not an approved System Administrator.');
+        await signOut(auth);
+        router.push('/admin/login');
+        return;
+      }
+
+      setLoadingAuth(false);
+
+      // Fetch Clinics
+      unsubscribeData = subscribeToAllClinicsAdmin((data) => {
+        setClinics(data);
+      });
+
+      // Fetch Audit Logs
+      unsubscribeLogs = subscribeToAuditLogs((logs) => {
+        setAuditLogs(logs);
+      });
     });
 
     return () => {

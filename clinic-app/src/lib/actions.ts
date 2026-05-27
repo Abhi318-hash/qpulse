@@ -1,45 +1,67 @@
-// Firestore Client implementation
-import { collection, doc, query, where, orderBy, onSnapshot, addDoc, updateDoc, increment, serverTimestamp, getDoc, getDocs } from 'firebase/firestore';
+/**
+ * actions.ts — Firestore Client Library (All Phases)
+ * 
+ * All Firestore operations live here. This is the single source of truth
+ * for data access patterns across the entire Q-PULSE application.
+ * 
+ * PHASE 1: Security hardening — runTransaction for atomic token assignment
+ * PHASE 2: Notification fields on appointments
+ * PHASE 3: Patient profile + medical record creation
+ */
+
+import {
+  collection, doc, query, where, orderBy,
+  onSnapshot, addDoc, updateDoc, increment,
+  serverTimestamp, getDoc, getDocs, setDoc,
+  runTransaction, writeBatch,
+} from 'firebase/firestore';
 import { db } from './firebase';
 
-const CLINICS_COLLECTION = 'clinics';
-const APPOINTMENTS_COLLECTION = 'appointments';
+// ─────────────────────────────────────────────────────────────────────────────
+// COLLECTION NAMES — single source of truth
+// ─────────────────────────────────────────────────────────────────────────────
+const CLINICS_COL        = 'clinics';
+const APPOINTMENTS_COL   = 'appointments';
+const AUDIT_COL          = 'system_audits';
+const PATIENTS_COL       = 'patients';
+const NOTIF_QUEUE_COL    = 'notifications_queue';
 
-// Subscription hooks for Real-time Updates (Replacing polling)
+// ─────────────────────────────────────────────────────────────────────────────
+// REAL-TIME SUBSCRIPTIONS (Clinics)
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function subscribeToActiveClinics(callback: (clinics: any[]) => void) {
   const q = query(
-    collection(db, CLINICS_COLLECTION), 
+    collection(db, CLINICS_COL),
     where('is_hidden', '==', false)
   );
-  
   return onSnapshot(q, (snapshot) => {
-    let clinics = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    // Sort manually in JS to avoid Firebase Composite Index requirement
+    let clinics = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Sort in JS to avoid requiring composite index
     clinics.sort((a: any, b: any) => {
-       const dateA = a.created_at?.toMillis ? a.created_at.toMillis() : 0;
-       const dateB = b.created_at?.toMillis ? b.created_at.toMillis() : 0;
-       return dateB - dateA;
+      const dateA = a.created_at?.toMillis ? a.created_at.toMillis() : 0;
+      const dateB = b.created_at?.toMillis ? b.created_at.toMillis() : 0;
+      return dateB - dateA;
     });
     callback(clinics);
   }, (error) => {
-    console.error("Firebase Snapshot Error (Clinics):", error);
+    console.error('Firebase Snapshot Error (Clinics):', error);
   });
 }
 
 export function subscribeToAllClinicsAdmin(callback: (clinics: any[]) => void) {
   const q = query(
-    collection(db, CLINICS_COLLECTION),
+    collection(db, CLINICS_COL),
     orderBy('created_at', 'desc')
   );
-  
   return onSnapshot(q, (snapshot) => {
-    const clinics = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const clinics = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
     callback(clinics);
   });
 }
 
 export function subscribeToSingleClinic(id: string, callback: (clinic: any | null) => void) {
-  const docRef = doc(db, CLINICS_COLLECTION, id);
+  const docRef = doc(db, CLINICS_COL, id);
   return onSnapshot(docRef, (docSnap) => {
     if (docSnap.exists()) {
       callback({ id: docSnap.id, ...docSnap.data() });
@@ -49,248 +71,357 @@ export function subscribeToSingleClinic(id: string, callback: (clinic: any | nul
   });
 }
 
-
-// --- Admin & Audit Logging ---
-const AUDIT_COLLECTION = 'system_audits';
+// ─────────────────────────────────────────────────────────────────────────────
+// AUDIT LOGGING
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function logAdminAction(adminPhone: string, action: string, details: string) {
   if (!adminPhone) return;
-  await addDoc(collection(db, AUDIT_COLLECTION), {
+  await addDoc(collection(db, AUDIT_COL), {
     admin_phone: adminPhone,
-    action: action,
-    details: details,
+    action,
+    details,
     created_at: serverTimestamp(),
   });
 }
 
 export function subscribeToAuditLogs(callback: (logs: any[]) => void) {
-  const q = query(collection(db, AUDIT_COLLECTION), orderBy('created_at', 'desc'));
+  const q = query(collection(db, AUDIT_COL), orderBy('created_at', 'desc'));
   return onSnapshot(q, (snapshot) => {
-    const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const logs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
     callback(logs);
   });
 }
 
-// --- Admin Mutations ---
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN MUTATIONS (Clinic Management)
+// ─────────────────────────────────────────────────────────────────────────────
 
-export async function addClinic(name: string, doctorName: string, location: string, authorizedPhone: string, adminPhone: string) {
-  if (!name) throw new Error("Missing name");
-  
-  // Clean phone number before saving to ensure robust matching
+export async function addClinic(
+  name: string,
+  doctorName: string,
+  location: string,
+  authorizedPhone: string,
+  adminPhone: string
+) {
+  if (!name) throw new Error('Missing name');
+
   const cleanPhone = authorizedPhone ? authorizedPhone.replace(/[^0-9+]/g, '') : '';
   const finalPhone = cleanPhone && !cleanPhone.startsWith('+') ? `+91${cleanPhone}` : cleanPhone;
 
-  const docRef = await addDoc(collection(db, CLINICS_COLLECTION), {
+  const docRef = await addDoc(collection(db, CLINICS_COL), {
     name,
     doctor_name: doctorName || 'TBD',
     location: location || 'General',
     authorized_phone: finalPhone || '',
+    org_id: '',                        // Phase 4: will be set during multi-tenancy migration
     is_open: true,
     is_hidden: false,
     patient_count: 0,
+    last_issued_token: 0,
+    currently_serving_token: '--',
+    // Default notification config — Phase 2 will make these configurable
+    notification_config: {
+      sms_enabled: false,
+      fcm_enabled: false,
+      whatsapp_enabled: false,
+      notify_at_positions_before: 2,
+      notify_message_template: 'Your token #{token} is coming up at {clinic}!',
+    },
     created_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
   });
-  
+
   await logAdminAction(adminPhone, 'CREATE_CLINIC', `Created clinic: ${name} (ID: ${docRef.id})`);
   return docRef.id;
 }
 
 export async function hideClinic(id: string, adminPhone: string) {
-  const docRef = doc(db, CLINICS_COLLECTION, id);
-  await updateDoc(docRef, { is_hidden: true });
+  await updateDoc(doc(db, CLINICS_COL, id), { is_hidden: true, updated_at: serverTimestamp() });
   await logAdminAction(adminPhone, 'HIDE_CLINIC', `Hid clinic ID: ${id}`);
 }
 
 export async function unhideClinic(id: string, adminPhone: string) {
-  const docRef = doc(db, CLINICS_COLLECTION, id);
-  await updateDoc(docRef, { is_hidden: false });
+  await updateDoc(doc(db, CLINICS_COL, id), { is_hidden: false, updated_at: serverTimestamp() });
   await logAdminAction(adminPhone, 'UNHIDE_CLINIC', `Unhid clinic ID: ${id}`);
 }
 
 export async function updateDoctorName(id: string, doctorName: string, adminPhone: string) {
-  const docRef = doc(db, CLINICS_COLLECTION, id);
-  await updateDoc(docRef, { doctor_name: doctorName.trim() });
+  await updateDoc(doc(db, CLINICS_COL, id), { doctor_name: doctorName.trim(), updated_at: serverTimestamp() });
   await logAdminAction(adminPhone, 'UPDATE_DOCTOR', `Updated Doctor Name for clinic ID: ${id} to ${doctorName}`);
 }
 
 export async function updateDoctorProfileImage(clinicId: string, imageUrl: string, staffPhone: string) {
-  const docRef = doc(db, CLINICS_COLLECTION, clinicId);
-  await updateDoc(docRef, { doctor_image_url: imageUrl });
+  await updateDoc(doc(db, CLINICS_COL, clinicId), { doctor_image_url: imageUrl, updated_at: serverTimestamp() });
   await logAdminAction(staffPhone, 'UPDATE_DOCTOR_IMAGE', `Updated doctor profile image for clinic ID: ${clinicId}`);
 }
 
 export async function updateClinicProfile(id: string, profileData: any, adminPhone: string) {
-  const docRef = doc(db, CLINICS_COLLECTION, id);
-  await updateDoc(docRef, { 
-    doctor_name: (profileData.doctor_name || '').trim(),
-    dr_degree: (profileData.dr_degree || '').trim(),
-    specialization: (profileData.specialization || '').trim(),
-    phone_number: (profileData.phone_number || '').trim(),
+  await updateDoc(doc(db, CLINICS_COL, id), {
+    doctor_name:     (profileData.doctor_name || '').trim(),
+    dr_degree:       (profileData.dr_degree || '').trim(),
+    specialization:  (profileData.specialization || '').trim(),
+    phone_number:    (profileData.phone_number || '').trim(),
     operating_hours: (profileData.operating_hours || '').trim(),
-    fees: (profileData.fees || '').toString().trim()
+    fees:            (profileData.fees || '').toString().trim(),
+    updated_at:      serverTimestamp(),
   });
-  await logAdminAction(adminPhone, 'UPDATE_CLINIC_PROFILE', `Updated full profile details for clinic ID: ${id}`);
+  await logAdminAction(adminPhone, 'UPDATE_CLINIC_PROFILE', `Updated full profile for clinic ID: ${id}`);
 }
 
 export async function updateAuthorizedPhone(id: string, phone: string, adminPhone: string) {
   const cleanPhone = phone ? phone.replace(/[^0-9+]/g, '') : '';
   const finalPhone = cleanPhone && !cleanPhone.startsWith('+') ? `+91${cleanPhone}` : cleanPhone;
-  const docRef = doc(db, CLINICS_COLLECTION, id);
-  await updateDoc(docRef, { authorized_phone: finalPhone });
+  await updateDoc(doc(db, CLINICS_COL, id), { authorized_phone: finalPhone, updated_at: serverTimestamp() });
   await logAdminAction(adminPhone, 'UPDATE_AUTH_PHONE', `Changed authorized phone for clinic ID: ${id}`);
 }
 
-// --- Phase 2: Appointments & Token System ---
-
-export async function addPatientToken(clinicId: string, patientName: string, age: number, fees: number, disease: string, userPhone: string = '') {
-  // 1. Get the current clinic to determine the next token number
-  const clinicRef = doc(db, CLINICS_COLLECTION, clinicId);
-  const clinicSnap = await getDoc(clinicRef);
-  if (!clinicSnap.exists()) throw new Error("Clinic not found");
-
-  const clinicData = clinicSnap.data();
-  const nextToken = (clinicData.last_issued_token || 0) + 1;
-
-  // 2. Create the appointment document
-  const appointmentDoc = await addDoc(collection(db, APPOINTMENTS_COLLECTION), {
-    clinic_id: clinicId,
-    patient_name: patientName,
-    age: age,
-    fees: fees,
-    disease: disease,
-    user_phone: userPhone, // Empty string if walk-in, otherwise their phone
-    token_number: nextToken,
-    status: 'WAITING', // 'WAITING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'
-    created_at: serverTimestamp()
+export async function toggleClinicStatus(id: string, currentStatus: boolean) {
+  await updateDoc(doc(db, CLINICS_COL, id), {
+    is_open: !currentStatus,
+    updated_at: serverTimestamp(),
   });
-
-  // 3. Update the clinic's total count and last issued token
-  await updateDoc(clinicRef, {
-    last_issued_token: nextToken,
-    patient_count: increment(1) // Keep the global counter synced!
-  });
-
-  return appointmentDoc.id;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TOKEN SYSTEM — PHASE 1: Atomic token assignment via runTransaction
+// This guarantees no two patients ever get the same token number,
+// even under high concurrent load.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function addPatientToken(
+  clinicId: string,
+  patientName: string,
+  age: number,
+  fees: number,
+  disease: string,
+  userPhone: string = '',
+  bookingSource: 'online' | 'walkin' | 'staff' | 'whatsapp' = 'online'
+): Promise<string> {
+  const clinicRef = doc(db, CLINICS_COL, clinicId);
+  const now = new Date();
+
+  return await runTransaction(db, async (transaction) => {
+    // 1. Read clinic inside transaction — atomic snapshot
+    const clinicSnap = await transaction.get(clinicRef);
+    if (!clinicSnap.exists()) throw new Error('Clinic not found');
+
+    const clinicData = clinicSnap.data();
+    const nextToken = (clinicData.last_issued_token || 0) + 1;
+
+    // 2. Prepare appointment document reference
+    const newApptRef = doc(collection(db, APPOINTMENTS_COL));
+
+    // 3. Write appointment atomically
+    transaction.set(newApptRef, {
+      clinic_id:       clinicId,
+      org_id:          clinicData.org_id || '',   // Phase 4: org isolation
+      patient_name:    patientName,
+      age:             age,
+      fees:            fees,
+      disease:         disease || 'General',
+      user_phone:      userPhone,
+      token_number:    nextToken,
+      status:          'WAITING',
+      fees_paid:       false,
+      payment_mode:    'cash',
+      booking_source:  userPhone ? bookingSource : 'walkin',
+      // Timing fields for analytics (Phase 5)
+      queued_at:       serverTimestamp(),
+      date_string:     now.toISOString().split('T')[0],  // "2026-05-27"
+      day_of_week:     now.getDay(),
+      hour_of_day:     now.getHours(),
+      // Notification state — Phase 2
+      notifications_sent: {
+        queued_confirmation: false,
+        near_turn:           false,
+        your_turn:           false,
+        completed:           false,
+      },
+      created_at: serverTimestamp(),
+    });
+
+    // 4. Update clinic counters atomically
+    transaction.update(clinicRef, {
+      last_issued_token: nextToken,
+      patient_count:     increment(1),
+      updated_at:        serverTimestamp(),
+    });
+
+    return newApptRef.id;
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// QUEUE SUBSCRIPTIONS
+// ─────────────────────────────────────────────────────────────────────────────
 
 export function subscribeToClinicRoster(clinicId: string, callback: (appointments: any[]) => void) {
   const q = query(
-    collection(db, APPOINTMENTS_COLLECTION),
+    collection(db, APPOINTMENTS_COL),
     where('clinic_id', '==', clinicId),
     where('status', 'in', ['WAITING', 'IN_PROGRESS']),
     orderBy('token_number', 'asc')
   );
-  
   return onSnapshot(q, (snapshot) => {
-    const apps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const apps = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
     callback(apps);
   });
 }
 
 export async function getClinicHistory(clinicId: string, limitCount: number = 200) {
-  // Fetch only COMPLETED or CANCELLED items, ordered by creation date descending
   const q = query(
-    collection(db, APPOINTMENTS_COLLECTION),
+    collection(db, APPOINTMENTS_COL),
     where('clinic_id', '==', clinicId),
     where('status', '==', 'COMPLETED')
   );
-  
   const snapshot = await getDocs(q);
-  let apps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  
-  // Sort descending by token/date so newest are first
+  let apps = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
   apps.sort((a: any, b: any) => b.token_number - a.token_number);
-  
   return apps.slice(0, limitCount);
 }
 
-// --- Public User Functions ---
-export function subscribeToUserActiveTokens(userPhone: string, callback: (tokens: any[]) => void) {
-  const q = query(
-    collection(db, APPOINTMENTS_COLLECTION),
-    where('user_phone', '==', userPhone),
-    where('status', 'in', ['WAITING', 'IN_PROGRESS'])
-  );
-  
-  return onSnapshot(q, (snapshot) => {
-    const tokens = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    callback(tokens);
-  });
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// QUEUE ADVANCEMENT — marks current as COMPLETED, promotes next
+// ─────────────────────────────────────────────────────────────────────────────
 
-export async function cancelUserToken(clinicId: string, appointmentId: string) {
-  const appRef = doc(db, APPOINTMENTS_COLLECTION, appointmentId);
-  await updateDoc(appRef, { status: 'CANCELLED' });
-
-  const clinicRef = doc(db, CLINICS_COLLECTION, clinicId);
-  await updateDoc(clinicRef, {
-    patient_count: increment(-1)
-  });
-}
-
-export async function getUserMedicalHistory(userPhone: string, limitCount: number = 50) {
-  const q = query(
-    collection(db, APPOINTMENTS_COLLECTION),
-    where('user_phone', '==', userPhone),
-    where('status', '==', 'COMPLETED')
-  );
-  
-  const snapshot = await getDocs(q);
-  let apps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  
-  // Sort descending manually to avoid composite logic requirements immediately
-  apps.sort((a: any, b: any) => {
-     const dateA = a.created_at?.toMillis ? a.created_at.toMillis() : 0;
-     const dateB = b.created_at?.toMillis ? b.created_at.toMillis() : 0;
-     return dateB - dateA;
-  });
-  
-  return apps.slice(0, limitCount);
-}
-
-// Replaces incrementPatient/decrementPatient -> advanceQueue
-export async function advanceTokenQueue(clinicId: string, completedAppointmentId: string, finalFee: number = 0) {
-  // 1. Mark the current one as completed
-  const appRef = doc(db, APPOINTMENTS_COLLECTION, completedAppointmentId);
+export async function advanceTokenQueue(
+  clinicId: string,
+  completedAppointmentId: string,
+  finalFee: number = 0
+) {
+  const appRef = doc(db, APPOINTMENTS_COL, completedAppointmentId);
   const snap = await getDoc(appRef);
   if (!snap.exists()) return;
-  const completedTokenNumber = snap.data().token_number;
+
   const currentSavedFee = snap.data().fees || 0;
-  
-  // Only override fee if explicitly specified, otherwise keep what was inputted during Walk-In
-  await updateDoc(appRef, { 
-    status: 'COMPLETED',
-    fees: finalFee > 0 ? finalFee : currentSavedFee
+  const completedAt = new Date();
+
+  // Calculate wait time if queued_at exists
+  const queuedAt = snap.data().queued_at?.toDate?.();
+  const waitMins = queuedAt
+    ? Math.round((completedAt.getTime() - queuedAt.getTime()) / 60000)
+    : null;
+
+  // 1. Mark current appointment as COMPLETED
+  await updateDoc(appRef, {
+    status:             'COMPLETED',
+    fees:               finalFee > 0 ? finalFee : currentSavedFee,
+    fees_paid:          true,
+    completed_at:       serverTimestamp(),
+    wait_time_minutes:  waitMins,
+    'notifications_sent.completed': true,
   });
 
-  // 2. Find the next appointment in line (to figure out the new active token)
+  // 2. Find next patient in queue
   const q = query(
-    collection(db, APPOINTMENTS_COLLECTION),
+    collection(db, APPOINTMENTS_COL),
     where('clinic_id', '==', clinicId),
     where('status', 'in', ['WAITING', 'IN_PROGRESS']),
     orderBy('token_number', 'asc')
   );
   const queueSnap = await getDocs(q);
-  
-  let nextTokenDisplay = '--';
-  if (!queueSnap.empty) {
-     nextTokenDisplay = queueSnap.docs[0].data().token_number;
-  } else {
-     // Queue is empty now
-     nextTokenDisplay = 'Empty';
-  }
 
-  // 3. Update global counter for public visibility
-  const clinicRef = doc(db, CLINICS_COLLECTION, clinicId);
+  const nextTokenDisplay = queueSnap.empty
+    ? 'Empty'
+    : queueSnap.docs[0].data().token_number;
+
+  // 3. Update clinic's serving token and patient count
+  const clinicRef = doc(db, CLINICS_COL, clinicId);
   await updateDoc(clinicRef, {
-    patient_count: increment(-1),
-    currently_serving_token: nextTokenDisplay
+    patient_count:             increment(-1),
+    currently_serving_token:   nextTokenDisplay,
+    updated_at:                serverTimestamp(),
   });
 }
 
-export async function toggleClinicStatus(id: string, currentStatus: boolean) {
-  const docRef = doc(db, CLINICS_COLLECTION, id);
-  await updateDoc(docRef, {
-    is_open: !currentStatus
+// ─────────────────────────────────────────────────────────────────────────────
+// PATIENT / PUBLIC FUNCTIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function subscribeToUserActiveTokens(userPhone: string, callback: (tokens: any[]) => void) {
+  const q = query(
+    collection(db, APPOINTMENTS_COL),
+    where('user_phone', '==', userPhone),
+    where('status', 'in', ['WAITING', 'IN_PROGRESS'])
+  );
+  return onSnapshot(q, (snapshot) => {
+    const tokens = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(tokens);
+  });
+}
+
+export async function cancelUserToken(clinicId: string, appointmentId: string) {
+  const appRef = doc(db, APPOINTMENTS_COL, appointmentId);
+  await updateDoc(appRef, { status: 'CANCELLED' });
+
+  const clinicRef = doc(db, CLINICS_COL, clinicId);
+  await updateDoc(clinicRef, {
+    patient_count: increment(-1),
+    updated_at:    serverTimestamp(),
+  });
+}
+
+export async function getUserMedicalHistory(userPhone: string, limitCount: number = 50) {
+  const q = query(
+    collection(db, APPOINTMENTS_COL),
+    where('user_phone', '==', userPhone),
+    where('status', '==', 'COMPLETED')
+  );
+  const snapshot = await getDocs(q);
+  let apps = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+  apps.sort((a: any, b: any) => {
+    const dateA = a.created_at?.toMillis ? a.created_at.toMillis() : 0;
+    const dateB = b.created_at?.toMillis ? b.created_at.toMillis() : 0;
+    return dateB - dateA;
+  });
+  return apps.slice(0, limitCount);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATIENT PROFILE — Phase 3
+// Auto-creates patient doc on first login; idempotent.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function ensurePatientProfile(uid: string, phone: string, name: string = '') {
+  if (!uid || !phone) return;
+  const patientRef = doc(db, PATIENTS_COL, uid);
+  const snap = await getDoc(patientRef);
+  if (!snap.exists()) {
+    await setDoc(patientRef, {
+      id:         uid,
+      phone:      phone,
+      full_name:  name,
+      medical_background: {
+        chronic_conditions: [],
+        allergies:          [],
+        current_medications: [],
+        surgeries:          [],
+        family_history:     [],
+      },
+      stats: {
+        total_visits:          0,
+        total_spent:           0,
+        clinics_visited:       [],
+        last_visited_clinic_id: '',
+      },
+      data_consent:     false,
+      created_at:       serverTimestamp(),
+      updated_at:       serverTimestamp(),
+    });
+  }
+}
+
+export async function getPatientProfile(uid: string) {
+  if (!uid) return null;
+  const snap = await getDoc(doc(db, PATIENTS_COL, uid));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
+export async function updatePatientProfile(uid: string, data: Partial<any>) {
+  if (!uid) return;
+  await updateDoc(doc(db, PATIENTS_COL, uid), {
+    ...data,
+    updated_at: serverTimestamp(),
   });
 }
