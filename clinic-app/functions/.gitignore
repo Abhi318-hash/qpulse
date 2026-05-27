@@ -1,0 +1,10 @@
+# Compiled JavaScript
+lib/
+
+# Dependencies
+node_modules/
+
+# Env or config
+.env
+.env.local
+.env.*.local

@@ -425,3 +425,12 @@ export async function updatePatientProfile(uid: string, data: Partial<any>) {
     updated_at: serverTimestamp(),
   });
 }
+
+export async function saveFcmToken(phone: string, token: string) {
+  if (!phone || !token) return;
+  await setDoc(doc(db, 'fcm_tokens', phone), {
+    token,
+    updated_at: serverTimestamp(),
+  });
+}
+

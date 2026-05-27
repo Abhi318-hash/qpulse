@@ -1,12 +1,12 @@
 'use client'
 
-import { subscribeToActiveClinics, subscribeToUserActiveTokens, addPatientToken, cancelUserToken, getUserMedicalHistory } from '@/lib/actions';
+import { subscribeToActiveClinics, subscribeToUserActiveTokens, addPatientToken, cancelUserToken, getUserMedicalHistory, saveFcmToken } from '@/lib/actions';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import Link from 'next/link';
 import React, { useState, useEffect, Suspense, useRef, useMemo, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Settings, Activity, Hospital, MapPin, Search as SearchIcon, Stethoscope, Star, Heart, QrCode, LogOut, Ticket, Loader2, CalendarPlus, X, History, ChevronDown, ChevronUp, Phone, Clock, UserRound, IndianRupee, CheckCircle, ArrowLeft, ArrowRight, Info, Sun, Moon } from 'lucide-react';
+import { Settings, Activity, Hospital, MapPin, Search as SearchIcon, Stethoscope, Star, Heart, QrCode, LogOut, Ticket, Loader2, CalendarPlus, X, History, ChevronDown, ChevronUp, Phone, Clock, UserRound, IndianRupee, CheckCircle, ArrowLeft, ArrowRight, Info, Sun, Moon, Bell } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
 export default function Home() {
@@ -50,6 +50,48 @@ function HomeContent() {
   const [patientAge, setPatientAge] = useState('');
   const [disease, setDisease] = useState('');
   const [isBooking, setIsBooking] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [isTogglingPush, setIsTogglingPush] = useState(false);
+
+  // Check if permission is already granted on mount/auth
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted' && currentUser?.phoneNumber) {
+      setPushEnabled(true);
+      // Auto-refresh token
+      import('@/lib/fcm').then(({ requestPushPermission }) => {
+        requestPushPermission().then(token => {
+          if (token) {
+            saveFcmToken(currentUser.phoneNumber, token);
+          }
+        });
+      });
+    }
+  }, [currentUser]);
+
+  const handlePushToggle = async () => {
+    if (!currentUser?.phoneNumber) return;
+    setIsTogglingPush(true);
+    try {
+      if (!pushEnabled) {
+        const { requestPushPermission } = await import('@/lib/fcm');
+        const token = await requestPushPermission();
+        if (token) {
+          await saveFcmToken(currentUser.phoneNumber, token);
+          setPushEnabled(true);
+          alert('Push notifications enabled successfully!');
+        } else {
+          alert('Failed to enable push notifications. Please check browser permissions.');
+        }
+      } else {
+        setPushEnabled(false);
+      }
+    } catch (error) {
+      console.error(error);
+      alert('Failed to configure notifications.');
+    } finally {
+      setIsTogglingPush(false);
+    }
+  };
 
   const clinicsRef = useRef<any[]>([]);
   const myTokensRef = useRef<any[]>([]);
@@ -490,6 +532,9 @@ function HomeContent() {
               </div>
               <div style={{ background: '#f8fafc', padding: '0.9rem', borderRadius: 10, border: '1px solid #eef0f3', fontSize: '0.8rem', color: '#5a6a7e', textAlign: 'center' }}>
                 You&apos;ll be assigned a live token. Pay ₹{bookingClinic.fees || '500'} at the clinic desk.
+                <div style={{ fontSize: '0.72rem', color: '#007BFF', marginTop: '0.4rem', fontWeight: 600 }}>
+                  🔔 SMS alert will be sent when your turn is near!
+                </div>
               </div>
               <button type="submit" className="btn btn-primary" style={{ padding: '0.9rem', fontSize: '1rem', fontWeight: 700 }} disabled={isBooking || !patientName}>
                 {isBooking ? <Loader2 size={22} className="animate-spin" /> : <><CalendarPlus size={18} /> Confirm &amp; Get Token</>}
@@ -575,6 +620,27 @@ function HomeContent() {
                 </div>
               </div>
             </div>
+
+            <div style={{ marginBottom: '2rem' }}>
+              <h4 style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: '1rem', paddingBottom: '0.5rem', borderBottom: '1px solid #eef0f3', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Bell size={13} /> Notification Preferences
+              </h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#1a2332', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={pushEnabled}
+                    onChange={handlePushToggle}
+                    disabled={isTogglingPush}
+                  />
+                  Enable Push Notifications
+                </label>
+                <span style={{ fontSize: '0.7rem', color: '#5a6a7e', marginLeft: '1.4rem' }}>
+                  Get browser alerts when your token is near.
+                </span>
+              </div>
+            </div>
+
             <button onClick={() => { setShowSidebar(false); setShowHistory(true); }} className="btn btn-outline" style={{ width: '100%', padding: '0.85rem', color: '#007BFF', borderColor: 'rgba(0,123,255,0.25)', marginBottom: '1rem' }}>
               <History size={16} /> View Medical History
             </button>
@@ -635,16 +701,28 @@ const ClinicCard = React.memo(function ClinicCard({ clinic, isFavorite, onFavori
         {/* Clinic name + live status */}
         <div style={{ paddingRight: '5rem', marginBottom: '1.25rem' }}>
           <h2 style={{ fontSize: '1.2rem', fontWeight: 800, margin: '0 0 0.4rem 0', color: '#1a2332', letterSpacing: '-0.3px' }}>{clinic.name}</h2>
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
-            padding: '0.2rem 0.75rem', borderRadius: 20, fontSize: '0.72rem', fontWeight: 700,
-            background: isOpen ? 'rgba(40,167,69,0.1)' : 'rgba(220,53,69,0.1)',
-            color: isOpen ? '#28a745' : '#dc3545',
-            border: `1px solid ${isOpen ? 'rgba(40,167,69,0.25)' : 'rgba(220,53,69,0.25)'}`
-          }}>
-            {isOpen && <span style={{ width: 6, height: 6, background: '#28a745', borderRadius: '50%', boxShadow: '0 0 6px #28a745', animation: 'pulse 2s infinite', display: 'inline-block' }} />}
-            {isOpen ? 'Queue is Live' : 'Clinic Closed'}
-          </span>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
+              padding: '0.2rem 0.75rem', borderRadius: 20, fontSize: '0.72rem', fontWeight: 700,
+              background: isOpen ? 'rgba(40,167,69,0.1)' : 'rgba(220,53,69,0.1)',
+              color: isOpen ? '#28a745' : '#dc3545',
+              border: `1px solid ${isOpen ? 'rgba(40,167,69,0.25)' : 'rgba(220,53,69,0.25)'}`
+            }}>
+              {isOpen && <span style={{ width: 6, height: 6, background: '#28a745', borderRadius: '50%', boxShadow: '0 0 6px #28a745', animation: 'pulse 2s infinite', display: 'inline-block' }} />}
+              {isOpen ? 'Queue is Live' : 'Clinic Closed'}
+            </span>
+            {clinic.notification_config?.sms_enabled && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+                padding: '0.2rem 0.75rem', borderRadius: 20, fontSize: '0.72rem', fontWeight: 700,
+                background: 'rgba(0,123,255,0.08)', color: '#007BFF',
+                border: '1px solid rgba(0,123,255,0.2)'
+              }} title="SMS alerts sent automatically">
+                <Bell size={11} /> SMS Active
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Doctor section */}
