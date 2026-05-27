@@ -45,28 +45,6 @@
       ]
     },
     {
-      "collectionGroup": "system_audits",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "created_at", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "system_audits",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "admin_phone", "order": "ASCENDING" },
-        { "fieldPath": "created_at", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "patients",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "phone", "order": "ASCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "medical_records",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
@@ -85,3 +63,4 @@
   ],
   "fieldOverrides": []
 }
+
