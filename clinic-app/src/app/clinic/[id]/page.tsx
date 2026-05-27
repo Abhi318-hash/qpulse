@@ -20,7 +20,7 @@ import {
   uploadFileToStorage 
 } from '@/lib/patientActions';
 import { 
-  Plus, Power, PowerOff, Check, X, MapPin, Stethoscope,
+  Plus, Power, PowerOff, Check, CheckCircle, X, MapPin, Stethoscope,
   Edit2, Loader2, LogOut, FileText, UserPlus, Zap, History,
   Search, Phone, Clock, IndianRupee, Printer, GraduationCap,
   ChevronRight, Users, TrendingUp
@@ -56,6 +56,52 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
   const [walkInPhone, setWalkInPhone] = useState(''); // Phase 2: optional SMS
   const [addingToken, setAddingToken] = useState(false);
   const [isAdminUser, setIsAdminUser] = useState(false);
+
+  // Returning patient recognition state
+  const [recognizedPatient, setRecognizedPatient] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchPatientByPhone = async () => {
+      const stripped = walkInPhone.replace(/[^0-9]/g, '');
+      if (stripped.length >= 10) {
+        const possiblePhones = [stripped, `+91${stripped}`, `91${stripped}`];
+        try {
+          const { collection, query, where, getDocs } = await import('firebase/firestore');
+          const { db } = await import('@/lib/firebase');
+          
+          let foundPatient: any = null;
+          for (const ph of possiblePhones) {
+            const q = query(collection(db, 'patients'), where('phone', '==', ph));
+            const snap = await getDocs(q);
+            if (!snap.empty) {
+              foundPatient = { id: snap.docs[0].id, ...snap.docs[0].data() };
+              break;
+            }
+          }
+          
+          if (foundPatient) {
+            setRecognizedPatient(foundPatient);
+            setPatientName(foundPatient.full_name || '');
+            if (foundPatient.date_of_birth) {
+              const birthYear = new Date(foundPatient.date_of_birth).getFullYear();
+              const currentYear = new Date().getFullYear();
+              if (birthYear && currentYear) {
+                setPatientAge((currentYear - birthYear).toString());
+              }
+            }
+          } else {
+            setRecognizedPatient(null);
+          }
+        } catch (err) {
+          console.error('Error finding patient by phone:', err);
+        }
+      } else {
+        setRecognizedPatient(null);
+      }
+    };
+    
+    fetchPatientByPhone();
+  }, [walkInPhone]);
 
   // Complete Visit (EHR) Modal State
   const [showCompleteModal, setShowCompleteModal] = useState(false);
@@ -574,6 +620,11 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
                     disabled={!isOpen || addingToken}
                     style={{ fontSize: '0.88rem' }}
                   />
+                  {recognizedPatient && (
+                    <div style={{ fontSize: '0.75rem', color: '#28a745', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '-0.3rem' }}>
+                      <CheckCircle size={12} /> Returning Patient: {recognizedPatient.full_name}
+                    </div>
+                  )}
                   <button type="submit" className="btn btn-primary"
                     disabled={!isOpen || addingToken || !patientName}
                     style={{ marginTop: '0.3rem' }}

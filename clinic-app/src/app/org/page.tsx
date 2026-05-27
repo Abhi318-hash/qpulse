@@ -13,7 +13,8 @@ import { db } from '@/lib/firebase';
 import { 
   Building, Stethoscope, Users, CreditCard, Plus, 
   ArrowUpRight, Loader2, LogOut, Settings, HelpCircle, 
-  Power, PowerOff, Shield, AlertTriangle, CheckCircle, X
+  Power, PowerOff, Shield, AlertTriangle, CheckCircle, X,
+  TrendingUp, BarChart2
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -27,6 +28,35 @@ export default function OrgDashboard() {
   const [loading, setLoading] = useState(true);
   const [addingClinic, setAddingClinic] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
+
+  const generateApiKey = async () => {
+    if (!org) return;
+    const plan = org.plan;
+    if (plan !== 'pro' && plan !== 'enterprise') {
+      alert('API access is a premium feature. Please upgrade to a PRO or ENTERPRISE subscription.');
+      return;
+    }
+    const confirmGenerate = window.confirm('Generate a new API key? Any existing key will be immediately invalidated.');
+    if (!confirmGenerate) return;
+
+    try {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+      let randomPart = '';
+      for (let i = 0; i < 32; i++) {
+        randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      const newKey = `qp_live_${randomPart}`;
+      await updateDoc(doc(db, 'organizations', org.id), {
+        api_key: newKey,
+        updated_at: serverTimestamp()
+      });
+      alert('API Key generated successfully!');
+    } catch (err) {
+      console.error('Error generating API key:', err);
+      alert('Failed to generate API Key.');
+    }
+  };
 
   // New clinic form state
   const [newClinicName, setNewClinicName] = useState('');
@@ -219,6 +249,9 @@ export default function OrgDashboard() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <Link href="/org/analytics" className="btn btn-outline" style={{ fontSize: '0.82rem', padding: '0.5rem 0.9rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+            <TrendingUp size={14} /> Org Analytics
+          </Link>
           <Link href="/billing" className="btn btn-outline" style={{ fontSize: '0.82rem', padding: '0.5rem 0.9rem' }}>
             <CreditCard size={14} /> Plan &amp; Billing
           </Link>
@@ -334,16 +367,104 @@ export default function OrgDashboard() {
                 {/* Dashboard Action Links */}
                 <div style={{ display: 'flex', gap: '0.5rem', marginTop: 'auto' }}>
                   <Link 
+                    href={`/clinic/${clinic.id}/analytics`} 
+                    className="btn btn-outline" 
+                    style={{ flex: 1, padding: '0.45rem', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.25rem' }}
+                  >
+                    <BarChart2 size={14} /> Analytics
+                  </Link>
+                  <Link 
                     href={`/clinic/${clinic.id}`} 
                     target="_blank"
                     className="btn btn-primary" 
-                    style={{ flex: 1, padding: '0.45rem', fontSize: '0.8rem' }}
+                    style={{ flex: 1, padding: '0.45rem', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.25rem' }}
                   >
                     Staff Dashboard <ArrowUpRight size={14} />
                   </Link>
                 </div>
               </div>
             ))
+          )}
+        </div>
+
+        {/* Developer API & Integrations Settings */}
+        <div className="clinic-card" style={{ marginTop: '2.5rem', padding: '1.75rem', border: '1px solid #eef0f3' }}>
+          <h2 style={{ fontSize: '1.05rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.45rem', margin: '0 0 1rem 0' }}>
+            <Settings size={18} color="#007BFF" /> Developer Settings &amp; API Integration
+          </h2>
+          
+          {org?.plan !== 'pro' && org?.plan !== 'enterprise' ? (
+            <div style={{ background: '#f8fafc', padding: '1.25rem', borderRadius: 12, border: '1px solid #eef0f3', fontSize: '0.85rem', color: '#5a6a7e' }}>
+              <p style={{ margin: '0 0 0.75rem 0' }}>
+                Public REST API access allows you to connect external websites, scheduling systems, and patient apps directly with your Q-PULSE queue.
+              </p>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#dc3545', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                <AlertTriangle size={14} /> API Access is disabled on your current plan ({org?.plan?.toUpperCase()}). Upgrade to PRO or ENTERPRISE to enable integration.
+              </span>
+              <Link href="/billing" className="btn btn-primary" style={{ display: 'inline-block', marginTop: '1rem', padding: '0.4rem 0.8rem', fontSize: '0.75rem' }}>
+                Upgrade Now
+              </Link>
+            </div>
+          ) : (
+            <div style={{ background: '#f8fafc', padding: '1.25rem', borderRadius: 12, border: '1px solid #eef0f3' }}>
+              <p style={{ margin: '0 0 1rem 0', fontSize: '0.85rem', color: '#5a6a7e' }}>
+                Use your private API Key to authenticate REST requests to the Q-PULSE network. Keep this key strictly confidential.
+              </p>
+              
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                <div style={{
+                  flex: 1, minWidth: 280, background: '#fff', border: '1px solid #dcdfe4',
+                  borderRadius: 8, padding: '0.6rem 0.9rem', fontFamily: 'monospace', fontSize: '0.82rem',
+                  color: org?.api_key ? '#1e293b' : '#94a3b8', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                }}>
+                  {org?.api_key ? (showApiKey ? org.api_key : '••••••••••••••••••••••••••••••••••••••••') : 'No key generated yet'}
+                  
+                  {org?.api_key && (
+                    <button 
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#007BFF', fontSize: '0.75rem', fontWeight: 600 }}
+                    >
+                      {showApiKey ? 'Hide' : 'Reveal'}
+                    </button>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  {org?.api_key && (
+                    <button 
+                      onClick={() => {
+                        navigator.clipboard.writeText(org.api_key);
+                        alert('API Key copied to clipboard!');
+                      }}
+                      className="btn btn-outline"
+                      style={{ fontSize: '0.78rem', padding: '0.55rem 0.85rem' }}
+                    >
+                      Copy Key
+                    </button>
+                  )}
+
+                  <button 
+                    onClick={generateApiKey}
+                    className="btn btn-primary"
+                    style={{ fontSize: '0.78rem', padding: '0.55rem 0.85rem' }}
+                  >
+                    {org?.api_key ? 'Regenerate Key' : 'Generate API Key'}
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ borderTop: '1px solid #eef0f3', paddingTop: '1rem', marginTop: '1rem' }}>
+                <h4 style={{ fontSize: '0.78rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: '#334155' }}>Quick API Documentation</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.75rem', color: '#5a6a7e' }}>
+                  <div>
+                    <strong style={{ color: '#1e293b' }}>List Clinics:</strong> <code>GET /api/v1/clinics</code> (Headers: <code>x-api-key: your_key</code>)
+                  </div>
+                  <div>
+                    <strong style={{ color: '#1e293b' }}>Get Live Queue Status:</strong> <code>GET /api/v1/clinics/&#123;clinic_id&#125;/queue</code> (Headers: <code>x-api-key: your_key</code>)
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
         </div>
 
