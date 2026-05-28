@@ -916,7 +916,7 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
                     <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
                       {(['ALL', 'COMPLETED', 'CANCELLED', 'NO_SHOW'] as const).map(filter => (
                         <button key={filter} onClick={() => setLogFilter(filter)} style={{
-                          padding: '0.3rem 0.8rem', fontSize: '0.75rem', borderRadius: '20px', border: 'none', cursor: 'pointer',
+                          padding: '0.3rem 0.8rem', fontSize: '0.75rem', borderRadius: '20px', cursor: 'pointer',
                           background: logFilter === filter ? '#1a2332' : '#f8fafc',
                           color: logFilter === filter ? 'white' : '#5a6a7e',
                           fontWeight: logFilter === filter ? 700 : 500, border: logFilter === filter ? '1px solid #1a2332' : '1px solid #eef0f3'
