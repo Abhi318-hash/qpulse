@@ -101,14 +101,14 @@ service cloud.firestore {
     // PATIENTS + SUB-COLLECTIONS — Phase 3
     // ─────────────────────────────────────────────────────────────────────────
     match /patients/{patientId} {
-      // Only the patient themselves or super-admin can read/write
+      // Only the patient themselves (via UID) or super-admin can read/write
       allow read:   if isSignedIn() && (
-        resource.data.phone == request.auth.token.phone_number || isSuperAdmin()
+        request.auth.uid == patientId || isSuperAdmin()
       );
       allow create: if isSignedIn() &&
-        request.resource.data.phone == request.auth.token.phone_number;
+        request.auth.uid == patientId;
       allow update: if isSignedIn() && (
-        resource.data.phone == request.auth.token.phone_number || isSuperAdmin()
+        request.auth.uid == patientId || isSuperAdmin()
       );
       allow delete: if isSuperAdmin();
 
@@ -148,6 +148,13 @@ service cloud.firestore {
       allow create:       if isSignedIn();  // Any auth user can write a log
       allow update:       if false;         // IMMUTABLE — no edits
       allow delete:       if false;         // IMMUTABLE — no deletes
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // FCM TOKENS — Phase 2
+    // ─────────────────────────────────────────────────────────────────────────
+    match /fcm_tokens/{phone} {
+      allow read, write: if isSignedIn() && request.auth.token.phone_number == phone;
     }
 
     // ─────────────────────────────────────────────────────────────────────────

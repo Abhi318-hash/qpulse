@@ -756,6 +756,15 @@ export default function ProfilePage() {
               </div>
 
               <div>
+                <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Upload Date</label>
+                <input 
+                  type="text" className="input-field" readOnly
+                  value={new Date().toLocaleDateString()}
+                  style={{ background: '#f8fafc', color: '#5a6a7e', cursor: 'not-allowed' }}
+                />
+              </div>
+
+              <div>
                 <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Doctor Name</label>
                 <input 
                   type="text" required className="input-field"

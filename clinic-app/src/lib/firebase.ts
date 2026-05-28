@@ -2,8 +2,7 @@ import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
-// App Check — import for Phase 1 (enable in Firebase Console first)
-// import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
+// App Check will be imported dynamically to prevent SSR deadlocks
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -18,13 +17,9 @@ const firebaseConfig = {
 // Initialize Firebase only once (Next.js hot-reload safe)
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
-// ── App Check (Phase 1 - uncomment after enabling in Firebase Console) ────────
-// if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY) {
-//   initializeAppCheck(app, {
-//     provider: new ReCaptchaV3Provider(process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY),
-//     isTokenAutoRefreshEnabled: true,
-//   });
-// }
+// ── App Check (Phase 1) ────────
+// App Check initialization removed for local dev because it causes Next.js Turbopack to crash.
+// To use App Check in production, initialize it dynamically inside a client component instead.
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);

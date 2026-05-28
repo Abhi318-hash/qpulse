@@ -3,6 +3,7 @@ import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/next';
 import "./globals.css";
 import TopNav from "@/components/TopNav";
+import AppCheckProvider from "@/components/AppCheckProvider";
 
 export const metadata: Metadata = {
   title: "Q-PULSE | Skip the wait, stay in the pulse",
@@ -40,8 +41,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body suppressHydrationWarning={true}>
-        <TopNav />
-        {children}
+        <AppCheckProvider>
+          <TopNav />
+          {children}
+        </AppCheckProvider>
         <Analytics />
         <SpeedInsights />
       </body>

@@ -30,7 +30,7 @@ const NOTIF_QUEUE_COL    = 'notifications_queue';
 // REAL-TIME SUBSCRIPTIONS (Clinics)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function subscribeToActiveClinics(callback: (clinics: any[]) => void) {
+export function subscribeToActiveClinics(callback: (clinics: any[]) => void, onError?: (error: any) => void) {
   const q = query(
     collection(db, CLINICS_COL),
     where('is_hidden', '==', false)
@@ -46,6 +46,7 @@ export function subscribeToActiveClinics(callback: (clinics: any[]) => void) {
     callback(clinics);
   }, (error) => {
     console.error('Firebase Snapshot Error (Clinics):', error);
+    if (onError) onError(error);
   });
 }
 
@@ -163,6 +164,7 @@ export async function updateClinicProfile(id: string, profileData: any, adminPho
     specialization:  (profileData.specialization || '').trim(),
     phone_number:    (profileData.phone_number || '').trim(),
     operating_hours: (profileData.operating_hours || '').trim(),
+    booking_end_time: (profileData.booking_end_time || '').trim(),
     fees:            (profileData.fees || '').toString().trim(),
     updated_at:      serverTimestamp(),
   });
@@ -207,7 +209,23 @@ export async function addPatientToken(
     if (!clinicSnap.exists()) throw new Error('Clinic not found');
 
     const clinicData = clinicSnap.data();
-    const nextToken = (clinicData.last_issued_token || 0) + 1;
+    
+    // Check booking end time
+    if (clinicData.booking_end_time) {
+      const [endHour, endMinute] = clinicData.booking_end_time.split(':').map(Number);
+      const endDateTime = new Date(now);
+      endDateTime.setHours(endHour, endMinute, 0, 0);
+      if (now > endDateTime) {
+        throw new Error('Booking is closed for today.');
+      }
+    }
+
+    const todayStr = now.toISOString().split('T')[0];
+
+    let nextToken = 1;
+    if (clinicData.current_date_string === todayStr) {
+      nextToken = (clinicData.last_issued_token || 0) + 1;
+    }
 
     // 2. Prepare appointment document reference
     const newApptRef = doc(collection(db, APPOINTMENTS_COL));
@@ -228,7 +246,7 @@ export async function addPatientToken(
       booking_source:  userPhone ? bookingSource : 'walkin',
       // Timing fields for analytics (Phase 5)
       queued_at:       serverTimestamp(),
-      date_string:     now.toISOString().split('T')[0],  // "2026-05-27"
+      date_string:     todayStr,
       day_of_week:     now.getDay(),
       hour_of_day:     now.getHours(),
       // Notification state — Phase 2
@@ -245,6 +263,7 @@ export async function addPatientToken(
     transaction.update(clinicRef, {
       last_issued_token: nextToken,
       patient_count:     increment(1),
+      current_date_string: todayStr,
       updated_at:        serverTimestamp(),
     });
 
@@ -260,12 +279,33 @@ export function subscribeToClinicRoster(clinicId: string, callback: (appointment
   const q = query(
     collection(db, APPOINTMENTS_COL),
     where('clinic_id', '==', clinicId),
-    where('status', 'in', ['WAITING', 'IN_PROGRESS']),
-    orderBy('token_number', 'asc')
+    where('status', 'in', ['WAITING', 'IN_PROGRESS', 'LATE', 'SPILLOVER'])
   );
   return onSnapshot(q, (snapshot) => {
     const apps = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Sort by time queued (Spillovers from yesterday will naturally sort before today's tokens)
+    apps.sort((a: any, b: any) => {
+      const tA = a.queued_at?.toMillis ? a.queued_at.toMillis() : 0;
+      const tB = b.queued_at?.toMillis ? b.queued_at.toMillis() : 0;
+      return tA - tB;
+    });
     callback(apps);
+  });
+}
+
+export function subscribeToPatientsAheadCount(clinicId: string, queuedAtMillis: number, callback: (count: number) => void) {
+  const q = query(
+    collection(db, APPOINTMENTS_COL),
+    where('clinic_id', '==', clinicId),
+    where('status', 'in', ['WAITING', 'IN_PROGRESS', 'LATE', 'SPILLOVER'])
+  );
+  return onSnapshot(q, (snapshot) => {
+    let count = 0;
+    snapshot.docs.forEach(doc => {
+      const qTime = doc.data().queued_at?.toMillis ? doc.data().queued_at.toMillis() : 0;
+      if (qTime < queuedAtMillis) count++;
+    });
+    callback(count);
   });
 }
 
@@ -273,11 +313,15 @@ export async function getClinicHistory(clinicId: string, limitCount: number = 20
   const q = query(
     collection(db, APPOINTMENTS_COL),
     where('clinic_id', '==', clinicId),
-    where('status', '==', 'COMPLETED')
+    where('status', 'in', ['COMPLETED', 'CANCELLED', 'NO_SHOW'])
   );
   const snapshot = await getDocs(q);
   let apps = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-  apps.sort((a: any, b: any) => b.token_number - a.token_number);
+  apps.sort((a: any, b: any) => {
+    const tA = a.created_at?.toMillis ? a.created_at.toMillis() : 0;
+    const tB = b.created_at?.toMillis ? b.created_at.toMillis() : 0;
+    return tB - tA;
+  });
   return apps.slice(0, limitCount);
 }
 
@@ -317,14 +361,19 @@ export async function advanceTokenQueue(
   const q = query(
     collection(db, APPOINTMENTS_COL),
     where('clinic_id', '==', clinicId),
-    where('status', 'in', ['WAITING', 'IN_PROGRESS']),
-    orderBy('token_number', 'asc')
+    where('status', 'in', ['WAITING', 'IN_PROGRESS'])
   );
   const queueSnap = await getDocs(q);
+  const apps = queueSnap.docs.map(d => d.data());
+  apps.sort((a: any, b: any) => {
+    const tA = a.queued_at?.toMillis ? a.queued_at.toMillis() : 0;
+    const tB = b.queued_at?.toMillis ? b.queued_at.toMillis() : 0;
+    return tA - tB;
+  });
 
-  const nextTokenDisplay = queueSnap.empty
+  const nextTokenDisplay = apps.length === 0
     ? 'Empty'
-    : queueSnap.docs[0].data().token_number;
+    : apps[0].token_number;
 
   // 3. Update clinic's serving token and patient count
   const clinicRef = doc(db, CLINICS_COL, clinicId);
@@ -333,6 +382,144 @@ export async function advanceTokenQueue(
     currently_serving_token:   nextTokenDisplay,
     updated_at:                serverTimestamp(),
   });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LIFECYCLE EDGES: LATE, NO SHOW, SPILLOVER
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function markTokenAsLate(clinicId: string, appointmentId: string) {
+  const appRef = doc(db, APPOINTMENTS_COL, appointmentId);
+  await updateDoc(appRef, {
+    status: 'LATE',
+    marked_late_at: serverTimestamp(),
+  });
+  
+  // Update currently serving token to next available
+  const q = query(
+    collection(db, APPOINTMENTS_COL),
+    where('clinic_id', '==', clinicId),
+    where('status', 'in', ['WAITING', 'IN_PROGRESS'])
+  );
+  const queueSnap = await getDocs(q);
+  const apps = queueSnap.docs.map(d => d.data());
+  apps.sort((a: any, b: any) => {
+    const tA = a.queued_at?.toMillis ? a.queued_at.toMillis() : 0;
+    const tB = b.queued_at?.toMillis ? b.queued_at.toMillis() : 0;
+    return tA - tB;
+  });
+  const nextTokenDisplay = apps.length === 0 ? 'Empty' : apps[0].token_number;
+  
+  await updateDoc(doc(db, CLINICS_COL, clinicId), {
+    currently_serving_token: nextTokenDisplay,
+    updated_at: serverTimestamp(),
+  });
+}
+
+export async function markAsNoShow(clinicId: string, appointmentId: string) {
+  const appRef = doc(db, APPOINTMENTS_COL, appointmentId);
+  await updateDoc(appRef, {
+    status: 'NO_SHOW',
+    completed_at: serverTimestamp(),
+  });
+  
+  await updateDoc(doc(db, CLINICS_COL, clinicId), {
+    patient_count: increment(-1),
+    updated_at: serverTimestamp(),
+  });
+}
+
+export async function restoreLatePatient(clinicId: string, appointmentId: string) {
+  const appRef = doc(db, APPOINTMENTS_COL, appointmentId);
+  await updateDoc(appRef, {
+    status: 'WAITING',
+    marked_late_at: null,
+  });
+  
+  // Re-evaluate serving token
+  const q = query(
+    collection(db, APPOINTMENTS_COL),
+    where('clinic_id', '==', clinicId),
+    where('status', 'in', ['WAITING', 'IN_PROGRESS'])
+  );
+  const queueSnap = await getDocs(q);
+  const apps = queueSnap.docs.map(d => d.data());
+  apps.sort((a: any, b: any) => {
+    const tA = a.queued_at?.toMillis ? a.queued_at.toMillis() : 0;
+    const tB = b.queued_at?.toMillis ? b.queued_at.toMillis() : 0;
+    return tA - tB;
+  });
+  const nextTokenDisplay = apps.length === 0 ? 'Empty' : apps[0].token_number;
+  
+  await updateDoc(doc(db, CLINICS_COL, clinicId), {
+    currently_serving_token: nextTokenDisplay,
+    updated_at: serverTimestamp(),
+  });
+}
+
+export async function moveRemainingQueueToTomorrow(clinicId: string) {
+  const q = query(
+    collection(db, APPOINTMENTS_COL),
+    where('clinic_id', '==', clinicId),
+    where('status', 'in', ['WAITING', 'LATE'])
+  );
+  const snapshot = await getDocs(q);
+  
+  if (snapshot.empty) return 0;
+
+  const batch = writeBatch(db);
+  let count = 0;
+  
+  snapshot.docs.forEach((d) => {
+    batch.update(d.ref, {
+      status: 'SPILLOVER',
+      moved_at: serverTimestamp()
+    });
+    count++;
+  });
+  
+  const clinicRef = doc(db, CLINICS_COL, clinicId);
+  batch.update(clinicRef, {
+    patient_count: increment(-count),
+    currently_serving_token: '--',
+    updated_at: serverTimestamp(),
+  });
+  
+  await batch.commit();
+  return count;
+}
+
+export async function assignSpilloverTokens(clinicId: string) {
+  const q = query(
+    collection(db, APPOINTMENTS_COL),
+    where('clinic_id', '==', clinicId),
+    where('status', '==', 'MOVED_TO_NEXT_DAY')
+  );
+  const snapshot = await getDocs(q);
+  
+  if (snapshot.empty) return 0;
+  
+  const batch = writeBatch(db);
+  let count = 0;
+  
+  snapshot.docs.forEach((appDoc) => {
+    // Revert status to WAITING, clear marked_late_at so they re-enter active queue
+    // Their old token_number and queued_at timestamp are preserved!
+    batch.update(appDoc.ref, { 
+      status: 'WAITING',
+      marked_late_at: null
+    });
+    count++;
+  });
+  
+  const clinicRef = doc(db, CLINICS_COL, clinicId);
+  batch.update(clinicRef, {
+    patient_count: increment(count),
+    updated_at: serverTimestamp()
+  });
+  
+  await batch.commit();
+  return count;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 import { 
   collection, doc, getDoc, getDocs, addDoc, setDoc, 
   updateDoc, deleteDoc, query, orderBy, where, serverTimestamp, 
-  writeBatch, Timestamp 
+  writeBatch, Timestamp, arrayUnion, arrayRemove 
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from './firebase';
@@ -323,3 +323,49 @@ export async function findOrCreatePatientByPhone(phone: string, name: string): P
   return newPatientRef.id;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PATIENT ACCESS CONTROL
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function grantClinicAccess(patientId: string, clinicId: string) {
+  const patientRef = doc(db, PATIENTS_COL, patientId);
+  await updateDoc(patientRef, {
+    granted_access_clinics: arrayUnion(clinicId),
+    updated_at: serverTimestamp()
+  });
+}
+
+export async function revokeClinicAccess(patientId: string, clinicId: string) {
+  const patientRef = doc(db, PATIENTS_COL, patientId);
+  await updateDoc(patientRef, {
+    granted_access_clinics: arrayRemove(clinicId),
+    updated_at: serverTimestamp()
+  });
+}
+
+export async function getPatientMedicalHistoryForClinic(phone: string, clinicId: string) {
+  const q = query(collection(db, PATIENTS_COL), where('phone', '==', phone));
+  const snap = await getDocs(q);
+  if (snap.empty) {
+    throw new Error('Patient profile not found.');
+  }
+  
+  const patient = snap.docs[0].data();
+  if (!patient.granted_access_clinics?.includes(clinicId)) {
+    throw new Error('Access denied. Patient has not granted access to their medical history for this clinic.');
+  }
+
+  const appQ = query(
+    collection(db, APPOINTMENTS_COL),
+    where('user_phone', '==', phone),
+    where('status', '==', 'COMPLETED')
+  );
+  const appSnap = await getDocs(appQ);
+  let apps = appSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  apps.sort((a: any, b: any) => {
+    const dateA = a.created_at?.toMillis ? a.created_at.toMillis() : 0;
+    const dateB = b.created_at?.toMillis ? b.created_at.toMillis() : 0;
+    return dateB - dateA;
+  });
+  return apps;
+}

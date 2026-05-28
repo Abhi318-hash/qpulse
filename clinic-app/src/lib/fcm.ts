@@ -15,7 +15,7 @@ export async function requestPushPermission(): Promise<string | null> {
     const messaging = getMessaging();
     const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY;
     if (!vapidKey) {
-      console.error('NEXT_PUBLIC_FIREBASE_VAPID_KEY is not defined in environment variables.');
+      console.warn('NEXT_PUBLIC_FIREBASE_VAPID_KEY is not defined in environment variables. Push notifications will be disabled.');
       return null;
     }
 

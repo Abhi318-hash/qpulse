@@ -1,13 +1,28 @@
 'use client'
 
-import { subscribeToActiveClinics, subscribeToUserActiveTokens, addPatientToken, cancelUserToken, getUserMedicalHistory, saveFcmToken, ensurePatientProfile } from '@/lib/actions';
+import { subscribeToActiveClinics, subscribeToUserActiveTokens, addPatientToken, cancelUserToken, getUserMedicalHistory, saveFcmToken, ensurePatientProfile, subscribeToPatientsAheadCount, updatePatientProfile } from '@/lib/actions';
+import { grantClinicAccess, revokeClinicAccess } from '@/lib/patientActions';
+import { translations, LanguageCode } from '@/i18n/translations';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import Link from 'next/link';
 import React, { useState, useEffect, Suspense, useRef, useMemo, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Settings, Activity, Hospital, MapPin, Search as SearchIcon, Stethoscope, Star, Heart, QrCode, LogOut, Ticket, Loader2, CalendarPlus, X, History, ChevronDown, ChevronUp, Phone, Clock, UserRound, IndianRupee, CheckCircle, ArrowLeft, ArrowRight, Info, Sun, Moon, Bell, FilePlus } from 'lucide-react';
+import { Settings, Activity, Hospital, MapPin, Search as SearchIcon, Stethoscope, Star, Heart, QrCode, LogOut, Ticket, Loader2, CalendarPlus, X, History, ChevronDown, ChevronUp, Phone, Clock, UserRound, IndianRupee, CheckCircle, ArrowLeft, ArrowRight, Info, Sun, Moon, Bell, FilePlus, Lock } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+
+const TokenAheadCounter = ({ clinicId, queuedAtMillis }: { clinicId: string, queuedAtMillis: number }) => {
+  const [count, setCount] = useState<number | null>(null);
+  useEffect(() => {
+    return subscribeToPatientsAheadCount(clinicId, queuedAtMillis, setCount);
+  }, [clinicId, queuedAtMillis]);
+  if (count === null) return null;
+  return (
+    <div style={{ textAlign: 'center', marginTop: '1rem', background: count === 0 ? '#d1fae5' : '#fffbeb', padding: '0.6rem', borderRadius: 8, color: count === 0 ? '#059669' : '#f59e0b', fontSize: '0.85rem', fontWeight: 700 }}>
+      {count === 0 ? "You're Next!" : `${count} patients ahead of you`}
+    </div>
+  );
+};
 
 export default function Home() {
   return (
@@ -35,6 +50,7 @@ function HomeContent() {
   const [clinics, setClinics] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState('');
   const [favorites, setFavorites] = useState<string[]>([]);
 
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -44,6 +60,7 @@ function HomeContent() {
   const [showSidebar, setShowSidebar] = useState(false);
 
   const [userProfile, setUserProfile] = useState({ name: '', age: '', disease: '' });
+  const [lang, setLang] = useState<LanguageCode>('en');
 
   const [bookingClinic, setBookingClinic] = useState<any | null>(null);
   const [patientName, setPatientName] = useState('');
@@ -145,6 +162,9 @@ function HomeContent() {
     if (saved) { try { setFavorites(JSON.parse(saved)); } catch (e) {} }
     const savedProfile = localStorage.getItem('qpulse_user_profile');
     if (savedProfile) { try { setUserProfile(JSON.parse(savedProfile)); } catch (e) {} }
+    
+    const savedLang = localStorage.getItem('qpulse_lang') as LanguageCode;
+    if (savedLang && translations[savedLang]) { setLang(savedLang); }
 
     let unsubscribeTokens: () => void;
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
@@ -184,6 +204,10 @@ function HomeContent() {
       });
       clinicsRef.current = data;
       setClinics(data);
+      setLoading(false);
+      setErrorMsg('');
+    }, (err) => {
+      setErrorMsg(err.message || 'Failed to connect to database');
       setLoading(false);
     });
     return () => unsubscribeClinics();
@@ -236,6 +260,7 @@ function HomeContent() {
       const p = { name: patientName, age: patientAge, disease };
       setUserProfile(p);
       localStorage.setItem('qpulse_user_profile', JSON.stringify(p));
+      await updatePatientProfile(currentUser.uid, p);
       await addPatientToken(bookingClinic.id, patientName, parseInt(patientAge) || 0, 0, disease || 'General', currentUser.phoneNumber);
       setBookingClinic(null); setPatientName(''); setPatientAge(''); setDisease('');
     } catch { alert('Booking failed. Please try again.'); }
@@ -320,6 +345,29 @@ function HomeContent() {
             <Link href="/about" style={iconBtn} title="About Q-PULSE" aria-label="About">
               <Info size={16} />
             </Link>
+
+            {/* Language toggle */}
+            <select
+              value={lang}
+              onChange={(e) => {
+                const newLang = e.target.value as LanguageCode;
+                setLang(newLang);
+                localStorage.setItem('qpulse_lang', newLang);
+              }}
+              style={{
+                ...iconBtn,
+                WebkitAppearance: 'none',
+                appearance: 'none',
+                padding: '0.45rem 1.2rem 0.45rem 0.6rem',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                background: isDark ? `url('data:image/svg+xml;utf8,<svg fill="%2394a3b8" viewBox="0 0 24 24" width="16" height="16"><path d="M7 10l5 5 5-5z"/></svg>') no-repeat right 4px center/16px, rgba(255,255,255,0.06)` : `url('data:image/svg+xml;utf8,<svg fill="%235a6a7e" viewBox="0 0 24 24" width="16" height="16"><path d="M7 10l5 5 5-5z"/></svg>') no-repeat right 4px center/16px, rgba(0,0,0,0.04)`,
+              }}
+            >
+              <option value="en">EN</option>
+              <option value="mr">मराठी</option>
+              <option value="hi">हिंदी</option>
+            </select>
 
             {/* Theme toggle */}
             <button onClick={toggleTheme} style={iconBtn} title={isDark ? 'Light mode' : 'Dark mode'} aria-label="Toggle theme">
@@ -443,7 +491,41 @@ function HomeContent() {
                         <strong style={{ fontSize: '1.8rem', color: '#28a745', lineHeight: 1 }}>#{mc?.currently_serving_token || '--'}</strong>
                       </div>
                     </div>
-                    <button onClick={() => handleCancelToken(token.clinic_id, token.id)} style={{ width: '100%', marginTop: '1rem', padding: '0.55rem', fontSize: '0.8rem', background: 'rgba(220,53,69,0.06)', color: '#dc3545', border: '1px solid rgba(220,53,69,0.2)', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    
+                    {token.queued_at && mc && (
+                      <TokenAheadCounter clinicId={token.clinic_id} queuedAtMillis={token.queued_at.toMillis()} />
+                    )}
+                    
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+                      <button 
+                        onClick={async () => {
+                          if (!currentUser) return;
+                          try {
+                            await grantClinicAccess(currentUser.uid, token.clinic_id);
+                            alert('Access granted! Doctor can now securely view your past medical history.');
+                          } catch(err) { alert('Failed to grant access'); }
+                        }}
+                        style={{ flex: 1, padding: '0.55rem', fontSize: '0.75rem', background: 'rgba(40,167,69,0.1)', color: '#28a745', border: '1px solid rgba(40,167,69,0.2)', borderRadius: 9, cursor: 'pointer', fontWeight: 600 }}
+                      >
+                        Grant History Access
+                      </button>
+                      
+                      <button 
+                        onClick={async () => {
+                          if (!currentUser) return;
+                          try {
+                            await revokeClinicAccess(currentUser.uid, token.clinic_id);
+                            alert('Access revoked! Doctor can no longer see your history.');
+                          } catch(err) { alert('Failed to revoke access'); }
+                        }}
+                        style={{ padding: '0.55rem 0.75rem', fontSize: '0.75rem', background: '#fff', color: '#5a6a7e', border: '1px solid #eef0f3', borderRadius: 9, cursor: 'pointer' }}
+                        title="Revoke Access"
+                      >
+                        <Lock size={14} />
+                      </button>
+                    </div>
+
+                    <button onClick={() => handleCancelToken(token.clinic_id, token.id)} style={{ width: '100%', marginTop: '0.5rem', padding: '0.55rem', fontSize: '0.8rem', background: 'rgba(220,53,69,0.06)', color: '#dc3545', border: '1px solid rgba(220,53,69,0.2)', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit' }}>
                       Cancel Appointment
                     </button>
                   </div>
@@ -490,6 +572,12 @@ function HomeContent() {
             <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '5rem 2rem', background: '#fff', borderRadius: 16, border: '1px solid #eef0f3' }}>
               <Loader2 size={36} className="animate-spin" style={{ color: '#007BFF', margin: '0 auto 1rem' }} />
               <p style={{ color: '#5a6a7e', fontWeight: 500 }}>Loading clinics…</p>
+            </div>
+          ) : errorMsg ? (
+            <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '4rem 2rem', background: 'rgba(220,53,69,0.05)', borderRadius: 16, border: '1px solid rgba(220,53,69,0.2)' }}>
+              <p style={{ color: '#dc3545', fontWeight: 700, marginBottom: '0.5rem' }}>Connection Error</p>
+              <p style={{ color: '#5a6a7e', fontSize: '0.9rem' }}>{errorMsg}</p>
+              <p style={{ color: '#5a6a7e', fontSize: '0.85rem', marginTop: '1rem' }}>Please verify Firebase App Check / Security Rules.</p>
             </div>
           ) : otherClinics.length === 0 && favoriteClinics.length === 0 ? (
             <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '4rem 2rem', background: '#fff', borderRadius: 16, border: '1px solid #eef0f3' }}>
@@ -548,9 +636,16 @@ function HomeContent() {
                   🔔 SMS alert will be sent when your turn is near!
                 </div>
               </div>
-              <button type="submit" className="btn btn-primary" style={{ padding: '0.9rem', fontSize: '1rem', fontWeight: 700 }} disabled={isBooking || !patientName}>
-                {isBooking ? <Loader2 size={22} className="animate-spin" /> : <><CalendarPlus size={18} /> Confirm &amp; Get Token</>}
-              </button>
+              {!bookingClinic.is_open ? (
+                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '1.5rem', borderRadius: '12px', textAlign: 'center', marginBottom: '1.5rem' }}>
+                  <h4 style={{ color: '#dc2626', margin: '0 0 0.5rem 0', fontWeight: 700 }}>Booking Closed</h4>
+                  <p style={{ color: '#b91c1c', fontSize: '0.9rem', margin: 0 }}>This clinic is not accepting new tokens right now. Please try again later.</p>
+                </div>
+              ) : (
+                <button type="submit" disabled={isBooking} className="btn btn-primary" style={{ width: '100%', padding: '1rem', fontSize: '1rem', fontWeight: 700, borderRadius: 12 }}>
+                  {isBooking ? <><Loader2 className="animate-spin" size={20} /> Booking...</> : <><Ticket size={20} /> Book Token</>}
+                </button>
+              )}
             </form>
           </div>
         </div>
@@ -682,6 +777,15 @@ const ClinicCard = React.memo(function ClinicCard({ clinic, isFavorite, onFavori
   const isOpen = !!clinic.is_open;
   const initials = (clinic.doctor_name || 'DR').split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2);
 
+  let isBookingClosed = false;
+  if (clinic.booking_end_time) {
+    const [hr, min] = clinic.booking_end_time.split(':').map(Number);
+    const now = new Date();
+    if (now.getHours() > hr || (now.getHours() === hr && now.getMinutes() >= min)) {
+      isBookingClosed = true;
+    }
+  }
+
   return (
     <div style={{
       background: '#fff', borderRadius: 18,
@@ -789,6 +893,11 @@ const ClinicCard = React.memo(function ClinicCard({ clinic, isFavorite, onFavori
             <a href={`tel:${phone}`} style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', fontSize: '0.82rem', color: '#5a6a7e', textDecoration: 'none' }}>
               <Phone size={14} color="#007BFF" style={{ flexShrink: 0 }} /> {phone}
             </a>
+            {clinic.booking_end_time && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', fontSize: '0.82rem', color: '#5a6a7e' }}>
+                <Clock size={14} color="#dc3545" style={{ flexShrink: 0 }} /> Booking Cutoff: {clinic.booking_end_time}
+              </div>
+            )}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', fontSize: '0.82rem', color: '#5a6a7e' }}>
               <IndianRupee size={14} color="#28a745" style={{ flexShrink: 0 }} /> ₹{fees} per consultation · Pay at desk
             </div>
@@ -796,10 +905,10 @@ const ClinicCard = React.memo(function ClinicCard({ clinic, isFavorite, onFavori
         )}
 
         {/* Book Button */}
-        <button onClick={() => onBookClick(clinic)} disabled={!isOpen}
+        <button onClick={() => onBookClick(clinic)} disabled={!isOpen || isBookingClosed}
           className="btn btn-primary"
-          style={{ width: '100%', padding: '0.85rem', fontSize: '0.95rem', fontWeight: 700, marginTop: '1rem', opacity: isOpen ? 1 : 0.5, justifyContent: 'center' }}>
-          {isOpen ? <><CalendarPlus size={17} /> Book Token Now</> : 'Currently Closed'}
+          style={{ width: '100%', padding: '0.85rem', fontSize: '0.95rem', fontWeight: 700, marginTop: '1rem', opacity: (!isOpen || isBookingClosed) ? 0.5 : 1, justifyContent: 'center' }}>
+          {isOpen ? (isBookingClosed ? 'Booking Closed' : <><CalendarPlus size={17} /> Book Token Now</>) : 'Currently Closed'}
         </button>
 
         {/* QR code */}

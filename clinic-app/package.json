@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build --webpack",
-    "start": "next start"
+    "start": "next start",
+    "migrate-add-org-id": "node scripts/migrate-add-org-id.js"
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",

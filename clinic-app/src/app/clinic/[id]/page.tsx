@@ -11,13 +11,20 @@ import {
   toggleClinicStatus, 
   subscribeToSingleClinic, 
   updateClinicProfile,
-  getClinicHistory
+  getClinicHistory,
+  markTokenAsLate,
+  markAsNoShow,
+  moveRemainingQueueToTomorrow,
+  assignSpilloverTokens,
+  restoreLatePatient
 } from '@/lib/actions';
 import { checkIsAdmin } from '@/lib/adminAuth';
 import { 
   findOrCreatePatientByPhone, 
   createMedicalRecord, 
-  uploadFileToStorage 
+  uploadFileToStorage,
+  revokeClinicAccess,
+  getPatientMedicalHistoryForClinic
 } from '@/lib/patientActions';
 import { 
   Plus, Power, PowerOff, Check, CheckCircle, X, MapPin, Stethoscope,
@@ -128,9 +135,17 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
   // History Modal State
   const [showHistory, setShowHistory] = useState(false);
   const [historyTab, setHistoryTab] = useState<'LOG' | 'ANALYTICS'>('LOG');
+  const [logFilter, setLogFilter] = useState<'ALL' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW'>('ALL');
+  const [rosterTab, setRosterTab] = useState<'ACTIVE' | 'LATE'>('ACTIVE');
   const [historyData, setHistoryData] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
+
+  // Patient Medical History Modal State
+  const [showPatientHistory, setShowPatientHistory] = useState(false);
+  const [patientHistoryData, setPatientHistoryData] = useState<any[] | null>(null);
+  const [patientHistoryError, setPatientHistoryError] = useState<string>('');
+  const [loadingPatientHistory, setLoadingPatientHistory] = useState(false);
 
   const exportToExcel = () => {
     if (!historyData || historyData.length === 0) {
@@ -311,6 +326,9 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
       // 4. Create medical record
       await createMedicalRecord(patientId, currentServing.id, id, recordData);
 
+      // 4.5 Auto-revoke clinic access to patient history
+      await revokeClinicAccess(patientId, id);
+
       // 5. Advance token queue
       await advanceTokenQueue(id, currentServing.id, recordData.consultationFee);
 
@@ -353,6 +371,22 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
     }
   };
 
+  const handleViewPatientHistory = async () => {
+    if (!currentServing) return;
+    setShowPatientHistory(true);
+    setPatientHistoryData(null);
+    setPatientHistoryError('');
+    setLoadingPatientHistory(true);
+    try {
+      const data = await getPatientMedicalHistoryForClinic(currentServing.user_phone, id);
+      setPatientHistoryData(data);
+    } catch (err: any) {
+      setPatientHistoryError(err.message || 'Failed to fetch patient history');
+    } finally {
+      setLoadingPatientHistory(false);
+    }
+  };
+
   const handleLogout = async () => {
     await signOut(auth);
     router.push('/clinic/login');
@@ -381,12 +415,18 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
   }
 
   const isOpen = !!clinic.is_open;
-  const currentServing = roster.length > 0 ? roster[0] : null;
-  const filteredHistory = historyData.filter(app =>
-    (app.patient_name || '').toLowerCase().includes(historySearch.toLowerCase()) ||
-    (app.disease || '').toLowerCase().includes(historySearch.toLowerCase()) ||
-    (app.token_number?.toString().includes(historySearch))
-  );
+  const activeRoster = roster.filter(app => app.status !== 'LATE');
+  const lateRoster = roster.filter(app => app.status === 'LATE');
+  const visibleRoster = rosterTab === 'ACTIVE' ? activeRoster : lateRoster;
+  const currentServing = activeRoster.length > 0 ? activeRoster[0] : null;
+
+  const filteredHistory = historyData.filter(app => {
+    const matchesSearch = (app.patient_name || '').toLowerCase().includes(historySearch.toLowerCase()) ||
+      (app.disease || '').toLowerCase().includes(historySearch.toLowerCase()) ||
+      (app.token_number?.toString().includes(historySearch));
+    const matchesStatus = logFilter === 'ALL' || app.status === logFilter;
+    return matchesSearch && matchesStatus;
+  });
 
   // ─── RENDER ───────────────────────────────────────────────────────────────
   return (
@@ -423,6 +463,24 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
               <button type="button" onClick={() => window.print()} className="btn btn-outline"
                 style={{ fontSize: '0.8rem', padding: '0.5rem 0.9rem', color: '#5a6a7e' }}>
                 <Printer size={14} /> QR Print
+              </button>
+              <button type="button" onClick={async () => {
+                if (confirm('End of Day? This will move all remaining waiting/late patients to tomorrow.')) {
+                  const moved = await moveRemainingQueueToTomorrow(id);
+                  alert(`Moved ${moved} patients to tomorrow.`);
+                }
+              }} className="btn btn-outline"
+                style={{ fontSize: '0.8rem', padding: '0.5rem 0.9rem', color: '#f59e0b', borderColor: 'rgba(245, 158, 11, 0.3)' }}>
+                End of Day
+              </button>
+              <button type="button" onClick={async () => {
+                if (confirm("Assign new tokens to yesterday's spilled-over patients? Do this BEFORE generating walk-ins.")) {
+                  const assigned = await assignSpilloverTokens(id);
+                  alert(`Assigned fresh tokens to ${assigned} spilled-over patients.`);
+                }
+              }} className="btn btn-outline"
+                style={{ fontSize: '0.8rem', padding: '0.5rem 0.9rem', color: '#007BFF', borderColor: 'rgba(0, 123, 255, 0.3)' }}>
+                Assign Spillovers
               </button>
               <button type="button" onClick={openHistory} className="btn btn-outline"
                 style={{ fontSize: '0.8rem', padding: '0.5rem 0.9rem', color: '#5a6a7e' }}>
@@ -569,6 +627,41 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
                     >
                       <Check size={20} /> Complete Visit (EHR)
                     </button>
+                    
+                    <button
+                      onClick={handleViewPatientHistory}
+                      className="btn btn-outline"
+                      style={{ width: '100%', padding: '0.75rem', fontSize: '0.85rem', fontWeight: 600, marginTop: '0.5rem', color: '#007BFF', borderColor: 'rgba(0,123,255,0.3)' }}
+                    >
+                      <History size={14} /> Patient Medical History
+                    </button>
+
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                      <button
+                        onClick={async () => {
+                          if (confirm('Mark this patient as LATE? They will remain in the queue but lose their active spot.')) {
+                            await markTokenAsLate(id, currentServing.id);
+                          }
+                        }}
+                        disabled={!isOpen}
+                        className="btn btn-outline"
+                        style={{ flex: 1, padding: '0.75rem', fontSize: '0.85rem', fontWeight: 600, color: '#f59e0b', borderColor: 'rgba(245, 158, 11, 0.3)' }}
+                      >
+                        Mark Late
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (confirm('Mark as NO-SHOW? This removes them from the active queue entirely.')) {
+                            await markAsNoShow(id, currentServing.id);
+                          }
+                        }}
+                        disabled={!isOpen}
+                        className="btn btn-outline"
+                        style={{ flex: 1, padding: '0.75rem', fontSize: '0.85rem', fontWeight: 600, color: '#dc3545', borderColor: 'rgba(220, 53, 69, 0.3)' }}
+                      >
+                        No-Show
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div style={{ padding: '2rem 0', opacity: 0.45 }}>
@@ -659,25 +752,48 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
                   </span>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', maxHeight: 380, overflowY: 'auto' }}>
-                  {roster.length === 0 ? (
-                    <div style={{ padding: '2.5rem 0', textAlign: 'center', color: '#5a6a7e', fontSize: '0.9rem' }}>
-                      No patients in queue.
-                    </div>
-                  ) : (
-                    roster.map((app, index) => {
-                      const isNext = index === 0;
+                  <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid #eef0f3', marginBottom: '1rem' }}>
+                    <button onClick={() => setRosterTab('ACTIVE')} style={{
+                      background: 'none', border: 'none', padding: '0.4rem 0',
+                      color: rosterTab === 'ACTIVE' ? '#007BFF' : '#5a6a7e',
+                      fontWeight: rosterTab === 'ACTIVE' ? 700 : 500,
+                      borderBottom: rosterTab === 'ACTIVE' ? '2px solid #007BFF' : '2px solid transparent',
+                      cursor: 'pointer', fontSize: '0.85rem'
+                    }}>
+                      Active ({activeRoster.length})
+                    </button>
+                    <button onClick={() => setRosterTab('LATE')} style={{
+                      background: 'none', border: 'none', padding: '0.4rem 0',
+                      color: rosterTab === 'LATE' ? '#f59e0b' : '#5a6a7e',
+                      fontWeight: rosterTab === 'LATE' ? 700 : 500,
+                      borderBottom: rosterTab === 'LATE' ? '2px solid #f59e0b' : '2px solid transparent',
+                      cursor: 'pointer', fontSize: '0.85rem'
+                    }}>
+                      Late ({lateRoster.length})
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', maxHeight: 380, overflowY: 'auto' }}>
+                    {visibleRoster.length === 0 ? (
+                      <div style={{ padding: '2.5rem 0', textAlign: 'center', color: '#5a6a7e', fontSize: '0.9rem' }}>
+                        {rosterTab === 'ACTIVE' ? 'No active patients in queue.' : 'No late patients.'}
+                      </div>
+                    ) : (
+                    visibleRoster.map((app, index) => {
+                      const isNext = index === 0 && rosterTab === 'ACTIVE';
+                      const isLate = app.status === 'LATE';
                       return (
                         <div key={app.id} style={{
                           padding: '0.9rem 1rem',
-                          background: isNext ? '#f0f7ff' : '#f8fafc',
+                          background: isNext ? '#f0f7ff' : (isLate ? '#fffbeb' : '#f8fafc'),
                           borderRadius: '10px',
-                          border: isNext ? '1.5px solid #007BFF' : '1px solid #eef0f3',
-                          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                          border: isNext ? '1.5px solid #007BFF' : (isLate ? '1px solid #fcd34d' : '1px solid #eef0f3'),
+                          display: 'flex', flexDirection: 'column', gap: '0.5rem',
                           transition: 'all 0.2s'
                         }}>
-                          <div>
-                            <h4 style={{ margin: '0 0 0.2rem 0', fontSize: '0.95rem', color: '#1a2332', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                              <h4 style={{ margin: '0 0 0.2rem 0', fontSize: '0.95rem', color: '#1a2332', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                               {app.patient_name}
                               {isNext && (
                                 <span style={{
@@ -685,18 +801,42 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
                                   padding: '2px 7px', borderRadius: '12px', fontWeight: 800, letterSpacing: '0.05em'
                                 }}>SERVING</span>
                               )}
+                              {isLate && (
+                                <span style={{
+                                  fontSize: '0.6rem', background: '#f59e0b', color: 'white',
+                                  padding: '2px 7px', borderRadius: '12px', fontWeight: 800, letterSpacing: '0.05em'
+                                }}>LATE</span>
+                              )}
+                              {app.status === 'SPILLOVER' && (
+                                <span style={{
+                                  fontSize: '0.6rem', background: '#6f42c1', color: 'white',
+                                  padding: '2px 7px', borderRadius: '12px', fontWeight: 800, letterSpacing: '0.05em'
+                                }}>YESTERDAY</span>
+                              )}
                             </h4>
-                            <span style={{ fontSize: '0.75rem', color: '#5a6a7e' }}>
-                              {app.age} yrs &nbsp;·&nbsp; {app.disease}
-                            </span>
+                              <span style={{ fontSize: '0.75rem', color: '#5a6a7e' }}>
+                                {app.age} yrs &nbsp;·&nbsp; {app.disease}
+                              </span>
+                            </div>
+                            <div style={{
+                              fontSize: '1.3rem', fontWeight: 800,
+                              color: isNext ? '#007BFF' : '#5a6a7e',
+                              minWidth: 40, textAlign: 'right'
+                            }}>
+                              #{app.token_number}
+                            </div>
                           </div>
-                          <div style={{
-                            fontSize: '1.3rem', fontWeight: 800,
-                            color: isNext ? '#007BFF' : '#5a6a7e',
-                            minWidth: 40, textAlign: 'right'
-                          }}>
-                            #{app.token_number}
-                          </div>
+                          {isLate && (
+                            <button onClick={async (e) => {
+                              e.stopPropagation();
+                              if (confirm(`Call back ${app.patient_name}? They will immediately become the active serving patient.`)) {
+                                await restoreLatePatient(id, app.id);
+                                setRosterTab('ACTIVE');
+                              }
+                            }} className="btn btn-outline" style={{ width: '100%', padding: '0.6rem', fontSize: '0.8rem', color: '#007BFF', borderColor: 'rgba(0,123,255,0.3)', background: 'white' }}>
+                              Call Back to Active
+                            </button>
+                          )}
                         </div>
                       );
                     })
@@ -773,6 +913,18 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
                       value={historySearch} onChange={(e) => setHistorySearch(e.target.value)}
                       style={{ paddingLeft: '2.75rem' }}
                     />
+                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                      {(['ALL', 'COMPLETED', 'CANCELLED', 'NO_SHOW'] as const).map(filter => (
+                        <button key={filter} onClick={() => setLogFilter(filter)} style={{
+                          padding: '0.3rem 0.8rem', fontSize: '0.75rem', borderRadius: '20px', border: 'none', cursor: 'pointer',
+                          background: logFilter === filter ? '#1a2332' : '#f8fafc',
+                          color: logFilter === filter ? 'white' : '#5a6a7e',
+                          fontWeight: logFilter === filter ? 700 : 500, border: logFilter === filter ? '1px solid #1a2332' : '1px solid #eef0f3'
+                        }}>
+                          {filter.replace('_', '-')}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   {filteredHistory.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '3rem', color: '#5a6a7e' }}>No records found.</div>
@@ -787,7 +939,12 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
                             borderRadius: '10px', border: '1px solid #eef0f3', alignItems: 'center'
                           }}>
                             <div>
-                              <p style={{ margin: 0, fontWeight: 700, color: '#1a2332', fontSize: '0.9rem' }}>{record.patient_name}</p>
+                              <p style={{ margin: '0 0 0.2rem 0', fontWeight: 700, color: '#1a2332', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                {record.patient_name}
+                                {record.status === 'COMPLETED' && <span style={{ fontSize: '0.55rem', background: '#28a745', color: 'white', padding: '2px 6px', borderRadius: '12px', fontWeight: 800, letterSpacing: '0.05em' }}>COMPLETED</span>}
+                                {record.status === 'CANCELLED' && <span style={{ fontSize: '0.55rem', background: '#dc3545', color: 'white', padding: '2px 6px', borderRadius: '12px', fontWeight: 800, letterSpacing: '0.05em' }}>CANCELLED</span>}
+                                {record.status === 'NO_SHOW' && <span style={{ fontSize: '0.55rem', background: '#6c757d', color: 'white', padding: '2px 6px', borderRadius: '12px', fontWeight: 800, letterSpacing: '0.05em' }}>NO-SHOW</span>}
+                              </p>
                               <p style={{ margin: 0, fontSize: '0.75rem', color: '#5a6a7e' }}>{record.disease} · {record.age}yrs</p>
                             </div>
                             <div style={{ display: 'flex', gap: '2rem', fontSize: '0.85rem' }}>
@@ -939,12 +1096,20 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
                 </div>
               </div>
 
-              <div>
-                <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Operating Schedule</label>
-                <input type="text" className="input-field"
-                  value={editData.operating_hours} onChange={e => setEditData({...editData, operating_hours: e.target.value})}
-                  placeholder="Mon-Sat: 10:00 AM – 6:00 PM"
-                />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Operating Schedule</label>
+                  <input type="text" className="input-field"
+                    value={editData.operating_hours} onChange={e => setEditData({...editData, operating_hours: e.target.value})}
+                    placeholder="Mon-Sat: 10 AM – 6 PM"
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Booking End Time</label>
+                  <input type="time" className="input-field"
+                    value={editData.booking_end_time || ''} onChange={e => setEditData({...editData, booking_end_time: e.target.value})}
+                  />
+                </div>
               </div>
 
               <button type="submit" className="btn btn-primary" disabled={savingProfile} style={{ marginTop: '0.5rem', padding: '0.9rem', fontSize: '1rem' }}>
@@ -1004,12 +1169,12 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
               {/* Chief Complaint & Diagnosis */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>
-                  <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Chief Complaint</label>
-                  <input type="text" required className="input-field" value={modalChiefComplaint} onChange={e => setModalChiefComplaint(e.target.value)} placeholder="e.g. Fever, Sore Throat" />
+                  <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Chief Complaint (Optional)</label>
+                  <input type="text" className="input-field" value={modalChiefComplaint} onChange={e => setModalChiefComplaint(e.target.value)} placeholder="e.g. Fever, Sore Throat" />
                 </div>
                 <div>
-                  <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Diagnosis</label>
-                  <input type="text" required className="input-field" value={modalDiagnosis} onChange={e => setModalDiagnosis(e.target.value)} placeholder="e.g. Acute Pharyngitis" />
+                  <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Diagnosis (Optional)</label>
+                  <input type="text" className="input-field" value={modalDiagnosis} onChange={e => setModalDiagnosis(e.target.value)} placeholder="e.g. Acute Pharyngitis" />
                 </div>
               </div>
 
@@ -1026,11 +1191,11 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   {modalMedications.map((med, index) => (
                     <div key={index} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1.5fr auto', gap: '0.4rem', alignItems: 'center' }}>
-                      <input type="text" className="input-field" placeholder="Medication" value={med.name} onChange={e => {
+                      <input type="text" className="input-field" placeholder="Medication (Optional)" value={med.name} onChange={e => {
                         const updated = [...modalMedications];
                         updated[index].name = e.target.value;
                         setModalMedications(updated);
-                      }} style={{ padding: '0.4rem' }} required={index === 0} />
+                      }} style={{ padding: '0.4rem' }} />
                       
                       <input type="text" className="input-field" placeholder="Dosage" value={med.dosage} onChange={e => {
                         const updated = [...modalMedications];
@@ -1117,6 +1282,91 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
           <p style={{ fontSize: '1.5rem', color: '#444' }}>Or visit: <strong>qpluse.vercel.app</strong></p>
         </div>
       </div>
+
+      {/* ── PATIENT HISTORY MODAL ── */}
+      {showPatientHistory && currentServing && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(10,15,25,0.85)', zIndex: 100000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', backdropFilter: 'blur(8px)'
+        }} onClick={(e) => e.target === e.currentTarget && setShowPatientHistory(false)}>
+          <div style={{
+            background: '#fff', width: '100%', maxWidth: 700, borderRadius: 24,
+            display: 'flex', flexDirection: 'column', maxHeight: '90vh',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.2)'
+          }}>
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid #eef0f3', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', borderTopLeftRadius: 24, borderTopRightRadius: 24 }}>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#1a2332', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <History size={20} color="#007BFF" /> {currentServing.patient_name}'s Medical History
+              </h3>
+              <button onClick={() => setShowPatientHistory(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#5a6a7e' }}><X size={20} /></button>
+            </div>
+            
+            <div style={{ padding: '1.5rem', overflowY: 'auto', flex: 1 }}>
+              {loadingPatientHistory ? (
+                <div style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+                  <Loader2 size={32} color="#007BFF" style={{ animation: 'spin 1s linear infinite', margin: '0 auto' }} />
+                  <p style={{ marginTop: '1rem', color: '#5a6a7e', fontWeight: 600 }}>Fetching patient records...</p>
+                </div>
+              ) : patientHistoryError ? (
+                <div style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+                  <p style={{ color: '#dc3545', fontWeight: 600, fontSize: '1.1rem' }}>{patientHistoryError}</p>
+                </div>
+              ) : patientHistoryData && patientHistoryData.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+                  <p style={{ color: '#5a6a7e', fontWeight: 600, fontSize: '1.1rem' }}>No past records found.</p>
+                </div>
+              ) : patientHistoryData && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                  {patientHistoryData.map((record) => (
+                    <div key={record.id} style={{
+                      background: '#fff', border: '1px solid #eef0f3', borderRadius: 16,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden'
+                    }}>
+                      <div style={{ background: '#f8fafc', padding: '1rem', borderBottom: '1px solid #eef0f3', display: 'flex', justifyContent: 'space-between' }}>
+                        <div>
+                          <p style={{ margin: 0, fontSize: '0.85rem', color: '#5a6a7e', fontWeight: 600 }}>
+                            {record.created_at?.toDate ? record.created_at.toDate().toLocaleString() : 'N/A'}
+                          </p>
+                          <p style={{ margin: '0.2rem 0 0', fontWeight: 700, color: '#1a2332' }}>Dr. {record.doctorName}</p>
+                        </div>
+                      </div>
+                      <div style={{ padding: '1.25rem' }}>
+                        <div style={{ marginBottom: '1rem' }}>
+                          <span style={{ fontSize: '0.7rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 800 }}>Diagnosis</span>
+                          <p style={{ margin: '0.2rem 0 0', fontWeight: 600, color: '#1a2332' }}>{record.diagnosis || 'N/A'}</p>
+                        </div>
+                        {record.prescriptionImageUrls && record.prescriptionImageUrls.length > 0 && (
+                          <div style={{ marginBottom: '1rem' }}>
+                            <span style={{ fontSize: '0.7rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 800 }}>Prescriptions</span>
+                            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                              {record.prescriptionImageUrls.map((url: string, i: number) => (
+                                <a key={i} href={url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 0.8rem', background: 'rgba(0,123,255,0.1)', color: '#007BFF', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 700, textDecoration: 'none' }}>
+                                  <FileText size={14} /> View Document
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {record.medications && record.medications.length > 0 && (
+                          <div>
+                            <span style={{ fontSize: '0.7rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 800 }}>Medications</span>
+                            <ul style={{ margin: '0.5rem 0 0', paddingLeft: '1.5rem', color: '#1a2332', fontSize: '0.9rem' }}>
+                              {record.medications.map((m: any, i: number) => (
+                                <li key={i}><strong>{m.name}</strong> - {m.dosage} ({m.duration})</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
