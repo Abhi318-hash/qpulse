@@ -52,7 +52,7 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
   const [savingProfile, setSavingProfile] = useState(false);
   const [editData, setEditData] = useState({
     doctor_name: '', dr_degree: '', specialization: '',
-    fees: '', phone_number: '', operating_hours: ''
+    fees: '', phone_number: '', operating_hours: '', booking_end_time: ''
   });
 
   // Walk-in Patient Form (Phase 2: added walkInPhone for SMS notifications)
