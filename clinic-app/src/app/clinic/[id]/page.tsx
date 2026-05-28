@@ -230,7 +230,8 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
       specialization: clinic.specialization || '',
       fees: clinic.fees || '',
       phone_number: clinic.phone_number || '',
-      operating_hours: clinic.operating_hours || ''
+      operating_hours: clinic.operating_hours || '',
+      booking_end_time: clinic.booking_end_time || ''
     });
     setShowEditProfile(true);
   };
