@@ -7,7 +7,7 @@ import { db, auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { 
   ArrowLeft, Building, Users, Clock, IndianRupee, 
-  TrendingUp, Table, Loader2, ArrowUpRight, BarChart2
+  TrendingUp, Table, Loader2, ArrowUpRight, BarChart2, Download, Calendar
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -18,6 +18,8 @@ export default function OrgAnalytics() {
   const [clinics, setClinics] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [authenticated, setAuthenticated] = useState(false);
+  const [dateFilter, setDateFilter] = useState<'all' | '7days' | '30days'>('all');
+  const [allAppts, setAllAppts] = useState<any[]>([]);
 
   // Computed metrics
   const [metrics, setMetrics] = useState({
@@ -44,6 +46,29 @@ export default function OrgAnalytics() {
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (allAppts.length > 0 && clinics.length > 0) {
+      applyFilterAndCompute();
+    }
+  }, [dateFilter, allAppts, clinics]);
+
+  const applyFilterAndCompute = () => {
+    let filtered = allAppts;
+    if (dateFilter !== 'all') {
+      const now = new Date();
+      const cutoff = new Date();
+      if (dateFilter === '7days') cutoff.setDate(now.getDate() - 7);
+      if (dateFilter === '30days') cutoff.setDate(now.getDate() - 30);
+      
+      filtered = allAppts.filter(a => {
+        if (!a.created_at) return true;
+        const d = a.created_at.toDate ? a.created_at.toDate() : new Date(a.created_at);
+        return d >= cutoff;
+      });
+    }
+    computeOrgMetrics(clinics, filtered);
+  };
 
   const fetchOrgAnalytics = async (phone: string | null) => {
     if (!phone) {
@@ -90,7 +115,8 @@ export default function OrgAnalytics() {
       const apptsQuery = query(collection(db, 'appointments'), where('org_id', '==', orgId));
       const apptsSnap = await getDocs(apptsQuery);
       const apptsList = apptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
+      
+      setAllAppts(apptsList);
       computeOrgMetrics(clinicsList, apptsList);
     } catch (err) {
       console.error('Error fetching org analytics:', err);
@@ -186,6 +212,26 @@ export default function OrgAnalytics() {
     setBookingSources(sourceBreakdown);
   };
 
+  const exportToCSV = () => {
+    let csv = 'Clinic Name,Doctor Name,Specialization,Total Bookings,Completed Visits,Revenue Generated (INR),Avg Wait Time (mins)\n';
+    clinicSummaries.forEach(c => {
+      // Escape commas in strings by wrapping in quotes
+      const name = `"${c.name || ''}"`;
+      const doc = `"${c.doctor || ''}"`;
+      const spec = `"${c.specialization || ''}"`;
+      csv += `${name},${doc},${spec},${c.total},${c.completed},${c.revenue},${c.avgWait}\n`;
+    });
+    
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Org_Analytics_${org?.name || 'Export'}_${dateFilter}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   if (loading || !authenticated) {
     return (
       <div style={{ display: 'grid', placeItems: 'center', minHeight: '100vh', background: '#f8fafc' }}>
@@ -224,8 +270,29 @@ export default function OrgAnalytics() {
             </div>
           </div>
           
-          <div style={{ background: 'white', border: '1px solid #eef0f3', padding: '0.5rem 0.75rem', borderRadius: 10, fontSize: '0.8rem', color: '#5a6a7e', fontWeight: 500 }}>
-            Workspace Owner: <strong style={{ color: '#1a2332' }}>{org?.owner_phone}</strong>
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', background: 'white', border: '1px solid #eef0f3', borderRadius: 8, overflow: 'hidden' }}>
+              <div style={{ padding: '0.5rem', background: '#f8fafc', borderRight: '1px solid #eef0f3', display: 'flex', alignItems: 'center', color: '#5a6a7e' }}>
+                <Calendar size={14} />
+              </div>
+              <select 
+                value={dateFilter} 
+                onChange={(e) => setDateFilter(e.target.value as any)}
+                style={{ border: 'none', background: 'white', padding: '0.5rem 1rem 0.5rem 0.5rem', fontSize: '0.8rem', fontWeight: 600, color: '#1a2332', outline: 'none', cursor: 'pointer' }}
+              >
+                <option value="all">All Time</option>
+                <option value="30days">Last 30 Days</option>
+                <option value="7days">Last 7 Days</option>
+              </select>
+            </div>
+            
+            <button 
+              onClick={exportToCSV}
+              className="btn btn-primary"
+              style={{ padding: '0.55rem 0.85rem', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+            >
+              <Download size={14} /> Export CSV
+            </button>
           </div>
         </div>
 

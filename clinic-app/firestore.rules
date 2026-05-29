@@ -10,11 +10,26 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Super-admin: phone exists in /admins/{phone} with is_active=true
+    // Super-admin: only the account with role='super_admin' in /admins/{phone}
+    // This is the highest privilege — only you have this.
     function isSuperAdmin() {
       return isSignedIn() &&
         exists(/databases/$(database)/documents/admins/$(request.auth.token.phone_number)) &&
+        get(/databases/$(database)/documents/admins/$(request.auth.token.phone_number)).data.role == 'super_admin' &&
         get(/databases/$(database)/documents/admins/$(request.auth.token.phone_number)).data.is_active == true;
+    }
+
+    // Org Admin: has role='org_admin' and belongs to an org
+    function isOrgAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.token.phone_number)) &&
+        get(/databases/$(database)/documents/admins/$(request.auth.token.phone_number)).data.role == 'org_admin' &&
+        get(/databases/$(database)/documents/admins/$(request.auth.token.phone_number)).data.is_active == true;
+    }
+
+    // Get the org_id of the current org admin
+    function getCallerOrgId() {
+      return get(/databases/$(database)/documents/admins/$(request.auth.token.phone_number)).data.org_id;
     }
 
     // Clinic staff: their phone matches authorized_phone on the clinic doc
@@ -25,94 +40,119 @@ service cloud.firestore {
           == request.auth.token.phone_number;
     }
 
-    // Check if the caller owns the patient document (by phone number in JWT)
+    // Check if caller owns the patient document (primary or recovery)
     function isPatientOwner(patientId) {
       return isSignedIn() &&
         exists(/databases/$(database)/documents/patients/$(patientId)) &&
-        get(/databases/$(database)/documents/patients/$(patientId)).data.phone
-          == request.auth.token.phone_number;
+        (get(/databases/$(database)/documents/patients/$(patientId)).data.phone == request.auth.token.phone_number ||
+         get(/databases/$(database)/documents/patients/$(patientId)).data.recovery_phone == request.auth.token.phone_number);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // ADMINS COLLECTION — Phase 1
-    // Only super-admins can read/write the admin list
+    // ADMINS COLLECTION
+    // Only super-admin can read/write the admin list
     // ─────────────────────────────────────────────────────────────────────────
     match /admins/{adminPhone} {
-      allow read:   if isSuperAdmin();
-      allow create: if isSuperAdmin();
+      allow read:   if isSuperAdmin() || request.auth.token.phone_number == adminPhone;
+      allow create: if isSuperAdmin(); // Only super admin grants access
       allow update: if isSuperAdmin();
       allow delete: if isSuperAdmin();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // ORGANIZATIONS — Phase 4
+    // ORG REQUESTS — New Collection
+    // Incoming application forms from clinics/hospitals wanting to join.
+    // Anyone authenticated can submit; only super admin can read and action.
+    // ─────────────────────────────────────────────────────────────────────────
+    match /org_requests/{requestId} {
+      allow read:   if isSuperAdmin() ||
+                       (isSignedIn() && resource.data.contact_phone == request.auth.token.phone_number);
+      allow create: if isSignedIn(); // Any authenticated user can submit an application
+      allow update: if isSuperAdmin(); // Only super admin approves/rejects
+      allow delete: if isSuperAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ORGANIZATIONS
+    // Created ONLY via Cloud Function (approval workflow), never client-side.
     // ─────────────────────────────────────────────────────────────────────────
     match /organizations/{orgId} {
       allow read:   if isSignedIn() &&
-                       (resource.data.owner_uid == request.auth.uid || isSuperAdmin());
-      allow create: if isSignedIn();
+                       (resource.data.owner_uid == request.auth.uid || isSuperAdmin() || isOrgAdmin());
+      allow create: if false; // Cloud Function only — super admin approval flow creates these
       allow update: if isSignedIn() &&
                        (resource.data.owner_uid == request.auth.uid || isSuperAdmin());
-      allow delete: if isSuperAdmin();
+      allow delete: if false; // Cloud Function only — hardDeleteOrganization handles this
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // CLINICS — Phase 1+
-    // Public read; only staff or super-admin can write
+    // HOSPITALS — New Collection (Optional tier between Org and Clinics)
+    // ─────────────────────────────────────────────────────────────────────────
+    match /hospitals/{hospitalId} {
+      allow read:   if true; // Public can search hospitals
+      allow create: if isSuperAdmin() ||
+                       (isOrgAdmin() && request.resource.data.org_id == getCallerOrgId());
+      allow update: if isSuperAdmin() ||
+                       (isOrgAdmin() && resource.data.org_id == getCallerOrgId());
+      allow delete: if false; // Cloud Function only — cascade delete
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CLINICS
+    // Public read; org admin or super admin can create; only super admin hard-deletes.
     // ─────────────────────────────────────────────────────────────────────────
     match /clinics/{clinicId} {
-      allow read:   if true;   // Public can read clinic info (queue counts, hours, etc.)
-      allow create: if isSuperAdmin();
-      allow update: if isSuperAdmin() || isClinicStaff(clinicId);
-      allow delete: if isSuperAdmin();
+      allow read:   if true; // Public can search clinics
+      allow create: if isSuperAdmin() ||
+                       (isOrgAdmin() && request.resource.data.org_id == getCallerOrgId());
+      allow update: if isSuperAdmin() ||
+                       isClinicStaff(clinicId) ||
+                       (isOrgAdmin() && resource.data.org_id == getCallerOrgId());
+      allow delete: if false; // Cloud Function only
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // APPOINTMENTS — Phase 1+
+    // APPOINTMENTS
     // ─────────────────────────────────────────────────────────────────────────
     match /appointments/{apptId} {
-      // Read: own appointment OR clinic staff OR admin
       allow read: if isSignedIn() && (
         resource.data.user_phone == request.auth.token.phone_number ||
         isClinicStaff(resource.data.clinic_id) ||
-        isSuperAdmin()
+        isSuperAdmin() ||
+        isOrgAdmin()
       );
-
-      // Create: patient books own appointment, OR staff creates walk-in
       allow create: if isSignedIn() && (
         request.resource.data.user_phone == request.auth.token.phone_number ||
         isClinicStaff(request.resource.data.clinic_id) ||
         isSuperAdmin()
       );
-
-      // Update: clinic staff advances queue / marks done, OR patient cancels own
       allow update: if isSignedIn() && (
         isClinicStaff(resource.data.clinic_id) ||
         (resource.data.user_phone == request.auth.token.phone_number &&
          request.resource.data.status == 'CANCELLED') ||
         isSuperAdmin()
       );
-
-      // Hard delete: super-admin only (use status='CANCELLED' for soft delete)
-      allow delete: if isSuperAdmin();
+      allow delete: if false; // Cloud Function only
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // PATIENTS + SUB-COLLECTIONS — Phase 3
+    // PATIENTS + SUB-COLLECTIONS
     // ─────────────────────────────────────────────────────────────────────────
     match /patients/{patientId} {
-      // Only the patient themselves (via UID) or super-admin can read/write
-      allow read:   if isSignedIn() && (
-        request.auth.uid == patientId || isSuperAdmin()
+      allow get:   if isSignedIn() && (
+        request.auth.uid == patientId || isPatientOwner(patientId) || isSuperAdmin()
       );
-      allow create: if isSignedIn() &&
-        request.auth.uid == patientId;
+      allow list:  if isSignedIn() && (
+        resource.data.phone == request.auth.token.phone_number ||
+        resource.data.recovery_phone == request.auth.token.phone_number ||
+        isSuperAdmin()
+      );
+      allow create: if isSignedIn() && request.auth.uid == patientId;
       allow update: if isSignedIn() && (
-        request.auth.uid == patientId || isSuperAdmin()
+        request.auth.uid == patientId || isPatientOwner(patientId) || isSuperAdmin()
       );
       allow delete: if isSuperAdmin();
 
-      // Medical records: patient + treating clinic staff + admin
       match /medical_records/{recordId} {
         allow read:          if isSignedIn() && (
           isPatientOwner(patientId) ||
@@ -125,14 +165,13 @@ service cloud.firestore {
         allow delete: if isSuperAdmin();
       }
 
-      // Prescriptions: patient + treating clinic staff + admin
       match /prescriptions/{prescriptionId} {
         allow read:   if isSignedIn() && (
           isPatientOwner(patientId) ||
           isClinicStaff(resource.data.clinic_id) ||
           isSuperAdmin()
         );
-        allow create: if isSignedIn(); // Patient or staff can upload
+        allow create: if isSignedIn();
         allow delete: if isSignedIn() && (
           isPatientOwner(patientId) || isSuperAdmin()
         );
@@ -140,40 +179,39 @@ service cloud.firestore {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // SYSTEM AUDIT LOGS — Phase 1
-    // Append-only: no updates or deletes ever
+    // SYSTEM AUDIT LOGS — Append-only, immutable
+    // All actions by admins, staff, and doctors are audited.
     // ─────────────────────────────────────────────────────────────────────────
     match /system_audits/{logId} {
-      allow read:         if isSuperAdmin();
-      allow create:       if isSignedIn();  // Any auth user can write a log
-      allow update:       if false;         // IMMUTABLE — no edits
-      allow delete:       if false;         // IMMUTABLE — no deletes
+      allow read:   if isSuperAdmin() || isOrgAdmin();
+      allow create: if isSignedIn(); // Any auth user can write a log (staff, doctor, admin)
+      allow update: if false;        // IMMUTABLE — no edits ever
+      allow delete: if false;        // IMMUTABLE — no deletes ever
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // FCM TOKENS — Phase 2
+    // FCM TOKENS
     // ─────────────────────────────────────────────────────────────────────────
     match /fcm_tokens/{phone} {
       allow read, write: if isSignedIn() && request.auth.token.phone_number == phone;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // NOTIFICATION QUEUE — Phase 2
-    // Cloud Functions write here; no client writes allowed
+    // NOTIFICATION QUEUE — Cloud Functions write only
     // ─────────────────────────────────────────────────────────────────────────
     match /notifications_queue/{jobId} {
       allow read:  if isSuperAdmin();
-      allow write: if false; // Only Cloud Functions (admin SDK) write here
+      allow write: if false; // Only Cloud Functions (Admin SDK)
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // SUBSCRIPTIONS — Phase 4
+    // SUBSCRIPTIONS
     // ─────────────────────────────────────────────────────────────────────────
     match /subscriptions/{orgId} {
       allow read:   if isSignedIn() &&
         (get(/databases/$(database)/documents/organizations/$(orgId)).data.owner_uid
           == request.auth.uid || isSuperAdmin());
-      allow write:  if isSuperAdmin(); // Razorpay webhook Cloud Function writes here
+      allow write:  if isSuperAdmin();
     }
 
   }

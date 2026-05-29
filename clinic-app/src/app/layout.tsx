@@ -1,9 +1,13 @@
 import type { Metadata, Viewport } from "next";
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/next';
+import { Outfit, Inter } from 'next/font/google';
 import "./globals.css";
 import TopNav from "@/components/TopNav";
 import AppCheckProvider from "@/components/AppCheckProvider";
+
+const outfit = Outfit({ subsets: ['latin'], variable: '--font-outfit' });
+const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
 export const metadata: Metadata = {
   title: "Q-PULSE | Skip the wait, stay in the pulse",
@@ -33,14 +37,34 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
+import Script from 'next/script';
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body suppressHydrationWarning={true}>
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <Script
+          strategy="afterInteractive"
+          src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"
+        />
+        <Script id="google-translate-init" strategy="afterInteractive">
+          {`
+            function googleTranslateElementInit() {
+              new window.google.translate.TranslateElement({
+                pageLanguage: 'en',
+                includedLanguages: 'en,hi,mr',
+                layout: window.google.translate.TranslateElement.InlineLayout.SIMPLE,
+                autoDisplay: false
+              }, 'google_translate_element');
+            }
+          `}
+        </Script>
+      </head>
+      <body suppressHydrationWarning={true} className={`${outfit.variable} ${inter.variable}`}>
         <AppCheckProvider>
           <TopNav />
           {children}

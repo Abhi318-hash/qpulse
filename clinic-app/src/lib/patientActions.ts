@@ -314,6 +314,7 @@ export async function findOrCreatePatientByPhone(phone: string, name: string): P
   await setDoc(newPatientRef, {
     id: newPatientRef.id,
     phone: phone,
+    recovery_phone: null,
     full_name: name,
     medical_background: { chronic_conditions: [], allergies: [], current_medications: [], surgeries: [], family_history: [] },
     stats: { total_visits: 0, total_spent: 0, clinics_visited: [] },
@@ -321,6 +322,14 @@ export async function findOrCreatePatientByPhone(phone: string, name: string): P
     updated_at: serverTimestamp()
   });
   return newPatientRef.id;
+}
+
+export async function addRecoveryNumber(patientId: string, recoveryPhone: string) {
+  const patientRef = doc(db, PATIENTS_COL, patientId);
+  await updateDoc(patientRef, {
+    recovery_phone: recoveryPhone,
+    updated_at: serverTimestamp()
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

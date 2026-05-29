@@ -44,13 +44,17 @@ export default function ClinicAnalytics() {
         return;
       }
       setAuthenticated(true);
-      fetchAnalyticsData();
+      if (user.phoneNumber) {
+        fetchAnalyticsData(user.phoneNumber);
+      } else {
+        router.push(`/login?redirect=/clinic/${clinicId}/analytics`);
+      }
     });
 
     return () => unsubscribe();
   }, [clinicId]);
 
-  const fetchAnalyticsData = async () => {
+  const fetchAnalyticsData = async (userPhoneNumber: string) => {
     try {
       setLoading(true);
       // 1. Fetch clinic details
@@ -60,7 +64,20 @@ export default function ClinicAnalytics() {
         setLoading(false);
         return;
       }
-      setClinic({ id: clinicSnap.id, ...clinicSnap.data() });
+      const clinicData = clinicSnap.data();
+      
+      // Access Control: Only authorized staff or super admin can view analytics
+      if (clinicData.authorized_phone !== userPhoneNumber) {
+        // Fallback: check if super admin
+        const adminSnap = await getDoc(doc(db, 'admins', userPhoneNumber));
+        if (!adminSnap.exists() || adminSnap.data()?.role !== 'super_admin') {
+          alert('ACCESS DENIED: You are not authorized to view this clinic\'s analytics.');
+          router.push(`/clinic/${clinicId}`);
+          return;
+        }
+      }
+
+      setClinic({ id: clinicSnap.id, ...clinicData });
 
       // 2. Fetch appointments (no date index needed, client-side filter)
       const q = query(

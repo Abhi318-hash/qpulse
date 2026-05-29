@@ -54,6 +54,7 @@ export default function ProfilePage() {
     date_of_birth: '',
     gender: 'male',
     blood_group: 'O+',
+    recovery_phone: '',
     chronic_conditions: '',
     allergies: '',
     emergency_contact: { name: '', phone: '', relation: '' }
@@ -72,8 +73,8 @@ export default function ProfilePage() {
         if (user.phoneNumber) {
           await ensurePatientProfile(user.uid, user.phoneNumber);
         }
-        // Fetch patient profile
-        const pProfile = (await getPatientProfile(user.uid)) as any;
+        // Fetch patient profile using UID and phoneNumber (for recovery resolution)
+        const pProfile = (await getPatientProfile(user.uid, user.phoneNumber || undefined)) as any;
         if (pProfile) {
           setPatient(pProfile);
           setEditProfile({
@@ -81,16 +82,18 @@ export default function ProfilePage() {
             date_of_birth: pProfile.date_of_birth || '',
             gender: pProfile.gender || 'male',
             blood_group: pProfile.blood_group || 'O+',
+            recovery_phone: pProfile.recovery_phone || '',
             chronic_conditions: pProfile.medical_background?.chronic_conditions?.join(', ') || '',
             allergies: pProfile.medical_background?.allergies?.join(', ') || '',
             emergency_contact: pProfile.emergency_contact || { name: '', phone: '', relation: '' }
           });
         }
 
-        // Fetch sub-collections
+        // Fetch sub-collections using the true patient ID (in case of recovery login)
+        const truePatientId = pProfile ? pProfile.id : user.uid;
         const [medRecords, docs] = await Promise.all([
-          getPatientMedicalRecords(user.uid),
-          getPatientPrescriptions(user.uid)
+          getPatientMedicalRecords(truePatientId),
+          getPatientPrescriptions(truePatientId)
         ]);
         setRecords(medRecords);
         setPrescriptions(docs);
@@ -115,6 +118,7 @@ export default function ProfilePage() {
         date_of_birth: editProfile.date_of_birth,
         gender: editProfile.gender,
         blood_group: editProfile.blood_group,
+        recovery_phone: editProfile.recovery_phone || null,
         medical_background: {
           chronic_conditions: editProfile.chronic_conditions
             .split(',')
@@ -131,10 +135,10 @@ export default function ProfilePage() {
         emergency_contact: editProfile.emergency_contact
       };
 
-      await updatePatientProfile(currentUser.uid, formattedData);
+      await updatePatientProfile(currentUser.uid, formattedData, currentUser.phoneNumber);
       
       // Update local state
-      const updated = (await getPatientProfile(currentUser.uid)) as any;
+      const updated = (await getPatientProfile(currentUser.uid, currentUser.phoneNumber)) as any;
       setPatient(updated);
       alert('Profile updated successfully!');
     } catch (err) {
@@ -147,19 +151,19 @@ export default function ProfilePage() {
 
   const handleDocUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUser || !docFile) return;
+    if (!currentUser || !docFile || !patient) return;
     setUploadingDoc(true);
 
     try {
       // 1. Upload to storage
       const { downloadUrl, storagePath } = await uploadFileToStorage(
-        currentUser.uid,
+        patient.id,
         docFile,
         'prescriptions'
       );
 
       // 2. Add Firestore document
-      await addPatientPrescriptionDocument(currentUser.uid, {
+      await addPatientPrescriptionDocument(patient.id, {
         fileUrl: downloadUrl,
         storagePath,
         fileName: docFile.name,
@@ -171,7 +175,7 @@ export default function ProfilePage() {
       });
 
       // 3. Refresh list
-      const docs = await getPatientPrescriptions(currentUser.uid);
+      const docs = await getPatientPrescriptions(patient.id);
       setPrescriptions(docs);
 
       // Reset form
@@ -190,10 +194,10 @@ export default function ProfilePage() {
   };
 
   const handleExportData = async () => {
-    if (!currentUser) return;
+    if (!currentUser || !patient) return;
     setExporting(true);
     try {
-      const dataStr = await exportPatientData(currentUser.uid);
+      const dataStr = await exportPatientData(patient.id);
       const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
       
       const exportFileDefaultName = `qpulse_patient_data_${currentUser.phoneNumber}.json`;
@@ -211,10 +215,10 @@ export default function ProfilePage() {
   };
 
   const handleDeleteAccount = async () => {
-    if (!currentUser) return;
+    if (!currentUser || !patient) return;
     setDeleting(true);
     try {
-      await deletePatientAccount(currentUser.uid, currentUser.phoneNumber);
+      await deletePatientAccount(patient.id, currentUser.phoneNumber);
       await signOut(auth);
       alert('Your account and all associated medical records have been permanently deleted.');
       router.push('/');
@@ -615,6 +619,15 @@ export default function ProfilePage() {
                         <option key={bg} value={bg}>{bg}</option>
                       ))}
                     </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Recovery Login Phone</label>
+                    <input 
+                      type="tel" className="input-field"
+                      value={editProfile.recovery_phone} 
+                      onChange={e => setEditProfile({...editProfile, recovery_phone: e.target.value})} 
+                      placeholder="+91..." 
+                    />
                   </div>
                 </div>
 

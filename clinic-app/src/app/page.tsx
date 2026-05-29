@@ -2,15 +2,19 @@
 
 import { subscribeToActiveClinics, subscribeToUserActiveTokens, addPatientToken, cancelUserToken, getUserMedicalHistory, saveFcmToken, ensurePatientProfile, subscribeToPatientsAheadCount, updatePatientProfile } from '@/lib/actions';
 import { grantClinicAccess, revokeClinicAccess } from '@/lib/patientActions';
-import { translations, LanguageCode } from '@/i18n/translations';
-import { auth } from '@/lib/firebase';
+import { auth, db, storage } from '@/lib/firebase';
+import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import Link from 'next/link';
 import React, { useState, useEffect, Suspense, useRef, useMemo, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Settings, Activity, Hospital, MapPin, Search as SearchIcon, Stethoscope, Star, Heart, QrCode, LogOut, Ticket, Loader2, CalendarPlus, X, History, ChevronDown, ChevronUp, Phone, Clock, UserRound, IndianRupee, CheckCircle, ArrowLeft, ArrowRight, Info, Sun, Moon, Bell, FilePlus, Lock } from 'lucide-react';
-import { QRCodeSVG } from 'qrcode.react';
+import { Settings, Activity, Hospital, MapPin, Search as SearchIcon, Stethoscope, Star, Heart, QrCode, LogOut, Ticket, Loader2, CalendarPlus, X, History, ChevronDown, ChevronUp, Phone, Clock, UserRound, IndianRupee, CheckCircle, ArrowLeft, ArrowRight, Info, Sun, Moon, Bell, FilePlus, Lock, Building } from 'lucide-react';
 
+import dynamic from 'next/dynamic';
+import Image from 'next/image';
+
+const DynamicQRCodeSVG = dynamic(() => import('qrcode.react').then(mod => mod.QRCodeSVG), { ssr: false });
 const TokenAheadCounter = ({ clinicId, queuedAtMillis }: { clinicId: string, queuedAtMillis: number }) => {
   const [count, setCount] = useState<number | null>(null);
   useEffect(() => {
@@ -23,6 +27,58 @@ const TokenAheadCounter = ({ clinicId, queuedAtMillis }: { clinicId: string, que
     </div>
   );
 };
+
+// Hook to detect iOS Safari and if it's already installed
+function useIOSInstallPrompt() {
+  const [showPrompt, setShowPrompt] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    const isSafari = /WebKit/.test(navigator.userAgent) && !/CriOS|FxiOS|OPiOS/.test(navigator.userAgent);
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone;
+    const dismissed = localStorage.getItem('qpulse_ios_prompt_dismissed') === 'true';
+
+    if (isIOS && isSafari && !isStandalone && !dismissed) {
+      setShowPrompt(true);
+    }
+  }, []);
+
+  const dismiss = () => {
+    setShowPrompt(false);
+    localStorage.setItem('qpulse_ios_prompt_dismissed', 'true');
+  };
+
+  return { showPrompt, dismiss };
+}
+
+function IOSInstallBanner() {
+  const { showPrompt, dismiss } = useIOSInstallPrompt();
+  
+  if (!showPrompt) return null;
+
+  return (
+    <div className="fade-in" style={{
+      position: 'fixed', bottom: 0, left: 0, right: 0, 
+      background: 'rgba(255, 255, 255, 0.98)', 
+      backdropFilter: 'blur(10px)',
+      boxShadow: '0 -4px 12px rgba(0,0,0,0.1)',
+      padding: '1rem', paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+      zIndex: 9999, display: 'flex', alignItems: 'flex-start', gap: '1rem',
+      borderTop: '1px solid #e2e8f0'
+    }}>
+      <div style={{ flex: 1 }}>
+        <h4 style={{ margin: '0 0 0.25rem 0', fontSize: '0.95rem', color: '#1a2332' }}>Install Q-PULSE</h4>
+        <p style={{ margin: 0, fontSize: '0.8rem', color: '#5a6a7e', lineHeight: 1.4 }}>
+          Tap the <b>Share</b> button <span style={{display:'inline-block', border:'1px solid #ccc', padding:'2px 4px', borderRadius:4, margin:'0 2px'}}>⏍</span> below, then select <b>"Add to Home Screen"</b>.
+        </p>
+      </div>
+      <button onClick={dismiss} style={{ background: 'none', border: 'none', padding: '0.2rem', cursor: 'pointer', color: '#94a3b8' }}>
+        <X size={20} />
+      </button>
+    </div>
+  );
+}
 
 export default function Home() {
   return (
@@ -49,6 +105,13 @@ function HomeContent() {
   const isMobile = windowWidth <= 480;
   const [clinics, setClinics] = useState<any[]>([]);
   const [search, setSearch] = useState('');
+  const [searchTab, setSearchTab] = useState<'clinic' | 'hospital' | 'doctor'>('clinic');
+  const [hospitals, setHospitals] = useState<any[]>([]);
+  const [doctorResults, setDoctorResults] = useState<any[]>([]);
+  const [hospitalSearch, setHospitalSearch] = useState('');
+  const [doctorSearch, setDoctorSearch] = useState('');
+  const [searchingHospitals, setSearchingHospitals] = useState(false);
+  const [searchingDoctors, setSearchingDoctors] = useState(false);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
   const [favorites, setFavorites] = useState<string[]>([]);
@@ -60,13 +123,17 @@ function HomeContent() {
   const [showSidebar, setShowSidebar] = useState(false);
 
   const [userProfile, setUserProfile] = useState({ name: '', age: '', disease: '' });
-  const [lang, setLang] = useState<LanguageCode>('en');
 
   const [bookingClinic, setBookingClinic] = useState<any | null>(null);
   const [patientName, setPatientName] = useState('');
   const [patientAge, setPatientAge] = useState('');
   const [disease, setDisease] = useState('');
   const [isBooking, setIsBooking] = useState(false);
+  const [useInsurance, setUseInsurance] = useState(false);
+  const [insuranceProvider, setInsuranceProvider] = useState('');
+  const [insurancePolicy, setInsurancePolicy] = useState('');
+  const [insuranceImage, setInsuranceImage] = useState<File | null>(null);
+  const [consultationType, setConsultationType] = useState<'IN_PERSON' | 'VIDEO'>('IN_PERSON');
   const [pushEnabled, setPushEnabled] = useState(false);
   const [isTogglingPush, setIsTogglingPush] = useState(false);
 
@@ -163,8 +230,7 @@ function HomeContent() {
     const savedProfile = localStorage.getItem('qpulse_user_profile');
     if (savedProfile) { try { setUserProfile(JSON.parse(savedProfile)); } catch (e) {} }
     
-    const savedLang = localStorage.getItem('qpulse_lang') as LanguageCode;
-    if (savedLang && translations[savedLang]) { setLang(savedLang); }
+    // Language state removed for Google Translate
 
     let unsubscribeTokens: () => void;
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
@@ -246,12 +312,20 @@ function HomeContent() {
     setPatientName(userProfile.name || '');
     setPatientAge(userProfile.age || '');
     setDisease(userProfile.disease || '');
+    setUseInsurance(false);
+    setInsuranceProvider('');
+    setInsurancePolicy('');
+    setInsuranceImage(null);
     setBookingClinic(clinic);
   }, [currentUser, myTokens, userProfile, router]);
 
   const submitBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!bookingClinic || !patientName || !currentUser?.phoneNumber) return;
+    if (useInsurance && (!insuranceProvider || !insuranceImage)) {
+      alert('Please provide your insurance provider and upload a photo of your ID card.');
+      return;
+    }
     if ('Notification' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
       try { await Notification.requestPermission(); } catch {}
     }
@@ -261,7 +335,33 @@ function HomeContent() {
       setUserProfile(p);
       localStorage.setItem('qpulse_user_profile', JSON.stringify(p));
       await updatePatientProfile(currentUser.uid, p);
-      await addPatientToken(bookingClinic.id, patientName, parseInt(patientAge) || 0, 0, disease || 'General', currentUser.phoneNumber);
+
+      let card_image_url = '';
+      if (useInsurance && insuranceImage) {
+        const fileExt = insuranceImage.name.split('.').pop() || 'jpg';
+        const fileRef = ref(storage, `insurance/${currentUser.uid}/${Date.now()}.${fileExt}`);
+        await uploadBytes(fileRef, insuranceImage);
+        card_image_url = await getDownloadURL(fileRef);
+      }
+
+      const insurancePayload = useInsurance ? {
+        provider_name: insuranceProvider,
+        policy_number: insurancePolicy,
+        card_image_url,
+        verification_status: 'PENDING' as const
+      } : undefined;
+
+      const tokenStr = await addPatientToken(
+        bookingClinic.id,
+        patientName,
+        parseInt(patientAge) || 0,
+        0,
+        disease,
+        currentUser.phoneNumber || '',
+        'online',
+        insurancePayload,
+        consultationType
+      );
       setBookingClinic(null); setPatientName(''); setPatientAge(''); setDisease('');
     } catch { alert('Booking failed. Please try again.'); }
     finally { setIsBooking(false); }
@@ -281,8 +381,49 @@ function HomeContent() {
   const favoriteClinics = useMemo(() => filteredClinics.filter(c => favorites.includes(c.id)), [filteredClinics, favorites]);
   const otherClinics = useMemo(() => filteredClinics.filter(c => !favorites.includes(c.id)), [filteredClinics, favorites]);
 
+  // Hospital search — fetch on demand (only when user actually types)
+  useEffect(() => {
+    if (searchTab !== 'hospital' || hospitalSearch.trim().length < 2) {
+      setHospitals([]);
+      return;
+    }
+    setSearchingHospitals(true);
+    const term = hospitalSearch.toLowerCase();
+    getDocs(query(collection(db, 'hospitals')))
+      .then(snap => {
+        const results = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter((h: any) =>
+            h.name?.toLowerCase().includes(term) ||
+            h.city?.toLowerCase().includes(term) ||
+            h.address?.toLowerCase().includes(term)
+          );
+        setHospitals(results);
+      })
+      .finally(() => setSearchingHospitals(false));
+  }, [hospitalSearch, searchTab]);
+
+  // Doctor search — query clinics by doctor_name field
+  useEffect(() => {
+    if (searchTab !== 'doctor' || doctorSearch.trim().length < 2) {
+      setDoctorResults([]);
+      return;
+    }
+    setSearchingDoctors(true);
+    const term = doctorSearch.toLowerCase();
+    // Filter already-loaded clinics for speed
+    const matches = clinics.filter(c =>
+      c.doctor_name?.toLowerCase().includes(term) ||
+      c.specialization?.toLowerCase().includes(term)
+    );
+    setDoctorResults(matches);
+    setSearchingDoctors(false);
+  }, [doctorSearch, searchTab, clinics]);
+
   return (
-    <main style={{ background: mainBg, minHeight: '100vh', transition: 'background 0.3s' }}>
+    <>
+      <IOSInstallBanner />
+      <main style={{ background: mainBg, minHeight: '100vh', transition: 'background 0.3s' }}>
 
       {/* ── STICKY NAV ── */}
       <nav style={{
@@ -341,33 +482,14 @@ function HomeContent() {
           {/* ══ RIGHT: About · Theme · Auth ══ */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
 
-            {/* About */}
-            <Link href="/about" style={iconBtn} title="About Q-PULSE" aria-label="About">
-              <Info size={16} />
+            {/* About / For Providers */}
+            <Link href="/about" style={{ ...iconBtn, width: 'auto', padding: '0 0.75rem', gap: '0.4rem', color: navSub, fontSize: '0.8rem', fontWeight: 600, textDecoration: 'none' }} title="For Providers" aria-label="For Providers">
+              <Building size={16} />
+              {!isMobile && 'For Providers'}
             </Link>
 
-            {/* Language toggle */}
-            <select
-              value={lang}
-              onChange={(e) => {
-                const newLang = e.target.value as LanguageCode;
-                setLang(newLang);
-                localStorage.setItem('qpulse_lang', newLang);
-              }}
-              style={{
-                ...iconBtn,
-                WebkitAppearance: 'none',
-                appearance: 'none',
-                padding: '0.45rem 1.2rem 0.45rem 0.6rem',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                background: isDark ? `url('data:image/svg+xml;utf8,<svg fill="%2394a3b8" viewBox="0 0 24 24" width="16" height="16"><path d="M7 10l5 5 5-5z"/></svg>') no-repeat right 4px center/16px, rgba(255,255,255,0.06)` : `url('data:image/svg+xml;utf8,<svg fill="%235a6a7e" viewBox="0 0 24 24" width="16" height="16"><path d="M7 10l5 5 5-5z"/></svg>') no-repeat right 4px center/16px, rgba(0,0,0,0.04)`,
-              }}
-            >
-              <option value="en">EN</option>
-              <option value="mr">मराठी</option>
-              <option value="hi">हिंदी</option>
-            </select>
+            {/* Google Translate Widget Placeholder */}
+            <div id="google_translate_element" suppressHydrationWarning style={{ display: 'inline-block', margin: '0 4px', height: 36, overflow: 'hidden' }}></div>
 
             {/* Theme toggle */}
             <button onClick={toggleTheme} style={iconBtn} title={isDark ? 'Light mode' : 'Dark mode'} aria-label="Toggle theme">
@@ -428,13 +550,59 @@ function HomeContent() {
           <p style={{ fontSize: '1.1rem', color: '#5a6a7e', maxWidth: 560, lineHeight: 1.7, margin: '0 0 2rem 0' }}>
             Book your clinic token online and track the live queue in real time — no calls, no waiting room stress.
           </p>
-          <div style={{ width: '100%', maxWidth: 560, position: 'relative' }}>
-            <SearchIcon style={{ position: 'absolute', left: '1.1rem', top: '50%', transform: 'translateY(-50%)', color: '#5a6a7e' }} size={19} />
-            <input type="text" className="input-field"
-              placeholder="Search by clinic, doctor name, or location…"
-              style={{ paddingLeft: '3rem', background: '#fff', border: '1.5px solid #dee2e8', borderRadius: '12px', fontSize: '0.95rem', height: 52, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}
-              value={search} onChange={e => setSearch(e.target.value)}
-            />
+
+          {/* ── 3-in-1 Universal Search ── */}
+          <div style={{ width: '100%', maxWidth: 580 }}>
+            {/* Tab Row */}
+            <div style={{ display: 'flex', background: isDark ? 'rgba(255,255,255,0.06)' : '#f0f4f8', borderRadius: '10px 10px 0 0', overflow: 'hidden', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : '#dee2e8'}`, borderBottom: 'none' }}>
+              {(['clinic', 'hospital', 'doctor'] as const).map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setSearchTab(tab)}
+                  style={{
+                    flex: 1, border: 'none', cursor: 'pointer',
+                    padding: '0.6rem 0.5rem', fontSize: '0.78rem', fontWeight: 700,
+                    background: searchTab === tab
+                      ? (isDark ? 'rgba(0,123,255,0.2)' : 'white')
+                      : 'transparent',
+                    color: searchTab === tab ? '#007BFF' : (isDark ? '#94a3b8' : '#5a6a7e'),
+                    borderBottom: searchTab === tab ? '2px solid #007BFF' : '2px solid transparent',
+                    transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {tab === 'clinic' && <><Stethoscope size={13} /> Clinic</>}
+                  {tab === 'hospital' && <><Hospital size={13} /> Hospital</>}
+                  {tab === 'doctor' && <><UserRound size={13} /> Doctor</>}
+                </button>
+              ))}
+            </div>
+
+            {/* Search Input */}
+            <div style={{ position: 'relative' }}>
+              <SearchIcon style={{ position: 'absolute', left: '1.1rem', top: '50%', transform: 'translateY(-50%)', color: '#5a6a7e', zIndex: 1 }} size={18} />
+              {searchTab === 'clinic' && (
+                <input type="text" className="input-field"
+                  placeholder="Search clinic name, doctor, or location…"
+                  style={{ paddingLeft: '3rem', background: isDark ? '#0d1929' : '#fff', border: `1.5px solid ${isDark ? 'rgba(255,255,255,0.15)' : '#dee2e8'}`, borderRadius: '0 0 12px 12px', fontSize: '0.95rem', height: 52, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}
+                  value={search} onChange={e => setSearch(e.target.value)}
+                />
+              )}
+              {searchTab === 'hospital' && (
+                <input type="text" className="input-field"
+                  placeholder="Search hospital or branch name, city…"
+                  style={{ paddingLeft: '3rem', background: isDark ? '#0d1929' : '#fff', border: `1.5px solid ${isDark ? 'rgba(255,255,255,0.15)' : '#dee2e8'}`, borderRadius: '0 0 12px 12px', fontSize: '0.95rem', height: 52, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}
+                  value={hospitalSearch} onChange={e => setHospitalSearch(e.target.value)}
+                />
+              )}
+              {searchTab === 'doctor' && (
+                <input type="text" className="input-field"
+                  placeholder="Search doctor name or specialization…"
+                  style={{ paddingLeft: '3rem', background: isDark ? '#0d1929' : '#fff', border: `1.5px solid ${isDark ? 'rgba(255,255,255,0.15)' : '#dee2e8'}`, borderRadius: '0 0 12px 12px', fontSize: '0.95rem', height: 52, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}
+                  value={doctorSearch} onChange={e => setDoctorSearch(e.target.value)}
+                />
+              )}
+            </div>
           </div>
         </div>
         <div style={{ display: 'flex', justifyContent: 'center', gap: '2.5rem', flexWrap: 'wrap' }}>
@@ -475,6 +643,7 @@ function HomeContent() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: '1.25rem' }}>
               {myTokens.map(token => {
                 const mc = clinics.find(c => c.id === token.clinic_id);
+                const positionsAhead = myTokensRef.current.filter(t => t.clinic_id === token.clinic_id && Number(t.token_number) < Number(token.token_number)).length;
                 return (
                   <div key={token.id} style={{ background: '#fff', borderRadius: 16, padding: '1.5rem', boxShadow: '0 2px 8px rgba(0,0,0,0.06), 0 8px 24px rgba(0,123,255,0.08)', border: '1px solid rgba(0,123,255,0.15)', position: 'relative', overflow: 'hidden' }}>
                     <div style={{ position: 'absolute', top: 0, right: 0, background: 'linear-gradient(135deg,#007BFF,#0056CC)', color: 'white', fontWeight: 700, padding: '0.2rem 0.9rem', borderBottomLeftRadius: 12, fontSize: '0.72rem' }}>LIVE</div>
@@ -491,9 +660,21 @@ function HomeContent() {
                         <strong style={{ fontSize: '1.8rem', color: '#28a745', lineHeight: 1 }}>#{mc?.currently_serving_token || '--'}</strong>
                       </div>
                     </div>
-                    
                     {token.queued_at && mc && (
                       <TokenAheadCounter clinicId={token.clinic_id} queuedAtMillis={token.queued_at.toMillis()} />
+                    )}
+
+                    <div style={{ marginTop: '1rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                        <span>Status</span>
+                        <span style={{ fontWeight: 800, color: '#4f46e5' }}>{token.status || 'WAITING'}</span>
+                      </div>
+                    </div>
+
+                    {token.consultation_type === 'VIDEO' && ((mc && Number(token.token_number) - Number(mc.currently_serving_token) <= 0) || token.status === 'SERVING') && (
+                      <Link href={`/consult/${token.id}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: '#25D366', color: 'white', padding: '0.75rem', borderRadius: '12px', textDecoration: 'none', fontWeight: 700, marginTop: '1rem', animation: 'pulse 2s infinite' }}>
+                        <span style={{ fontSize: '1.2rem' }}>📹</span> Join Video Call Now
+                      </Link>
                     )}
                     
                     <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
@@ -536,8 +717,104 @@ function HomeContent() {
           </section>
         )}
 
-        {/* ── FAVORITES ─────────────────────────────────── */}
-        {favorites.length > 0 && !search && (
+        {/* Hospital Search Results */}
+        {searchTab === 'hospital' && (
+          <section style={{ marginBottom: '3rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1.25rem' }}>
+              <div style={{ padding: '0.4rem', background: 'rgba(99,102,241,0.1)', borderRadius: '8px' }}>
+                <Hospital size={18} color="#6366f1" />
+              </div>
+              <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#1a2332', margin: 0 }}>
+                {hospitalSearch.length >= 2 ? `Hospitals matching "${hospitalSearch}"` : 'Search Hospitals & Branches'}
+              </h2>
+            </div>
+            {hospitalSearch.length < 2 ? (
+              <div style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8', background: '#f8fafc', borderRadius: 16, border: '1px dashed #dee2e8' }}>
+                <Hospital size={36} style={{ margin: '0 auto 0.75rem', opacity: 0.3 }} />
+                <p style={{ margin: 0 }}>Type at least 2 characters to search hospitals…</p>
+              </div>
+            ) : searchingHospitals ? (
+              <div style={{ textAlign: 'center', padding: '3rem' }}><Loader2 size={28} className="animate-spin" style={{ color: '#6366f1' }} /></div>
+            ) : hospitals.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8', background: '#f8fafc', borderRadius: 16, border: '1px dashed #dee2e8' }}>
+                <p style={{ margin: 0 }}>No hospitals found for &quot;{hospitalSearch}&quot;</p>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: '1rem' }}>
+                {hospitals.map((h: any) => (
+                  <div key={h.id} style={{ background: 'white', borderRadius: 16, padding: '1.5rem', border: '1px solid #eef0f3', borderLeft: '4px solid #6366f1', boxShadow: '0 2px 12px rgba(99,102,241,0.06)' }}>
+                    <div style={{ display: 'flex', gap: '0.75rem' }}>
+                      <div style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(99,102,241,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Hospital size={20} color="#6366f1" />
+                      </div>
+                      <div>
+                        <h3 style={{ margin: '0 0 0.2rem', fontSize: '0.95rem', fontWeight: 700, color: '#1a2332' }}>{h.name}</h3>
+                        <p style={{ margin: 0, fontSize: '0.78rem', color: '#5a6a7e' }}>{h.city}{h.address ? ` · ${h.address}` : ''}</p>
+                      </div>
+                    </div>
+                    <div style={{ marginTop: '1rem', fontSize: '0.78rem', color: '#5a6a7e', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <Stethoscope size={12} />
+                      {clinics.filter(c => c.hospital_id === h.id).length} clinic room(s)
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Doctor Search Results */}
+        {searchTab === 'doctor' && (
+          <section style={{ marginBottom: '3rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1.25rem' }}>
+              <div style={{ padding: '0.4rem', background: 'rgba(16,185,129,0.1)', borderRadius: '8px' }}>
+                <UserRound size={18} color="#10b981" />
+              </div>
+              <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#1a2332', margin: 0 }}>
+                {doctorSearch.length >= 2 ? `Doctors matching "${doctorSearch}"` : 'Search Doctors & Specializations'}
+              </h2>
+            </div>
+            {doctorSearch.length < 2 ? (
+              <div style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8', background: '#f8fafc', borderRadius: 16, border: '1px dashed #dee2e8' }}>
+                <UserRound size={36} style={{ margin: '0 auto 0.75rem', opacity: 0.3 }} />
+                <p style={{ margin: 0 }}>Type a doctor name or specialization to search…</p>
+              </div>
+            ) : doctorResults.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8', background: '#f8fafc', borderRadius: 16, border: '1px dashed #dee2e8' }}>
+                <p style={{ margin: 0 }}>No doctors found for &quot;{doctorSearch}&quot;</p>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: '1rem' }}>
+                {doctorResults.map((clinic: any) => (
+                  <div key={clinic.id} style={{ background: 'white', borderRadius: 16, padding: '1.5rem', border: '1px solid #eef0f3', borderLeft: '4px solid #10b981', boxShadow: '0 2px 12px rgba(16,185,129,0.06)' }}>
+                    <div style={{ display: 'flex', gap: '0.75rem' }}>
+                      <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(16,185,129,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <UserRound size={20} color="#10b981" />
+                      </div>
+                      <div>
+                        <h3 style={{ margin: '0 0 0.15rem', fontSize: '0.95rem', fontWeight: 700, color: '#1a2332' }}>Dr. {clinic.doctor_name}</h3>
+                        {clinic.specialization && <p style={{ margin: '0 0 0.2rem', fontSize: '0.78rem', color: '#10b981', fontWeight: 600 }}>{clinic.specialization}</p>}
+                        <p style={{ margin: 0, fontSize: '0.75rem', color: '#5a6a7e' }}>{clinic.name}</p>
+                      </div>
+                    </div>
+                    <div style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.75rem', color: clinic.is_open ? '#10b981' : '#94a3b8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                        <span style={{ width: 7, height: 7, borderRadius: '50%', background: clinic.is_open ? '#10b981' : '#94a3b8', display: 'inline-block' }} />
+                        {clinic.is_open ? 'Open' : 'Closed'}
+                      </span>
+                      <button onClick={() => { setSearchTab('clinic'); setSearch(clinic.doctor_name); }} style={{ fontSize: '0.75rem', fontWeight: 700, background: 'rgba(0,123,255,0.08)', color: '#007BFF', border: '1px solid rgba(0,123,255,0.2)', borderRadius: 8, padding: '0.35rem 0.7rem', cursor: 'pointer', fontFamily: 'inherit' }}>
+                        Book Token
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Favourites (clinic tab only) */}
+        {searchTab === 'clinic' && favorites.length > 0 && !search && (
           <section style={{ marginBottom: '3rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1.25rem' }}>
               <div style={{ padding: '0.4rem', background: 'rgba(220,53,69,0.1)', borderRadius: '8px' }}>
@@ -554,7 +831,8 @@ function HomeContent() {
           </section>
         )}
 
-        {/* ── CLINIC DIRECTORY ──────────────────────────── */}
+        {/* Clinic Directory header (clinic tab only) */}
+        {searchTab === 'clinic' && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
             <div style={{ padding: '0.4rem', background: 'rgba(0,123,255,0.1)', borderRadius: '8px' }}>
@@ -565,8 +843,10 @@ function HomeContent() {
             </h2>
           </div>
           {!loading && <span style={{ fontSize: '0.82rem', color: '#5a6a7e', fontWeight: 500 }}>{otherClinics.length + favoriteClinics.length} clinics live</span>}
-        </div>
+        </div>)}
 
+
+        {searchTab === 'clinic' && (
         <div className="grid-clinics">
           {loading ? (
             <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '5rem 2rem', background: '#fff', borderRadius: 16, border: '1px solid #eef0f3' }}>
@@ -589,16 +869,30 @@ function HomeContent() {
             ))
           )}
         </div>
+        )}
+
 
         {/* ── FOOTER ────────────────────────────────────── */}
-        <footer style={{ marginTop: '4rem', paddingTop: '2rem', borderTop: '1px solid #eef0f3', display: 'flex', justifyContent: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
-          <Link href="/admin/login" target="_blank" rel="noopener noreferrer" className="btn btn-outline" style={{ fontSize: '0.85rem', padding: '0.5rem 1.1rem', color: '#5a6a7e' }}>
-            <Settings size={15} /> Admin Portal
+        <footer style={{ marginTop: '4rem', paddingTop: '2rem', borderTop: '1px solid #eef0f3', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
+          <Link href="/about" style={{ fontSize: '0.85rem', color: '#5a6a7e', textDecoration: 'none', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+            <Building size={15} /> For Providers
           </Link>
-          <Link href="/clinic/login" target="_blank" rel="noopener noreferrer" className="btn btn-outline" style={{ fontSize: '0.85rem', padding: '0.5rem 1.1rem', color: '#5a6a7e' }}>
-            <Hospital size={15} /> Staff Portal
+          <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#dee2e8' }} />
+          <Link href="/login" style={{ fontSize: '0.85rem', color: '#5a6a7e', textDecoration: 'none', fontWeight: 600 }}>
+            Org Admin
           </Link>
-          <span style={{ color: '#5a6a7e', fontSize: '0.85rem', display: 'flex', alignItems: 'center', fontWeight: 500 }}>Powered by Q-PULSE Network</span>
+          <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#dee2e8' }} />
+          <Link href="/clinic/login" style={{ fontSize: '0.85rem', color: '#5a6a7e', textDecoration: 'none', fontWeight: 600 }}>
+            Staff Login
+          </Link>
+          <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#dee2e8' }} />
+          <Link href="/onboard" style={{ fontSize: '0.85rem', color: '#5a6a7e', textDecoration: 'none', fontWeight: 600 }}>
+            Register Clinic
+          </Link>
+          <div style={{ flexBasis: '100%', height: 0 }}></div>
+          <span style={{ color: '#94a3b8', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.5rem' }}>
+            Powered by Q-PULSE Network
+          </span>
         </footer>
       </div>
 
@@ -612,9 +906,9 @@ function HomeContent() {
                 <X size={18} />
               </button>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' }}>
                   {bookingClinic.doctor_image_url
-                    ? <img src={bookingClinic.doctor_image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ? <Image src={bookingClinic.doctor_image_url} alt="" fill style={{ objectFit: 'cover' }} unoptimized />
                     : <UserRound size={22} color="white" />}
                 </div>
                 <div>
@@ -625,16 +919,41 @@ function HomeContent() {
             </div>
             <form onSubmit={submitBooking} style={{ padding: '1.75rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <p style={{ margin: '0 0 0.5rem 0', color: '#5a6a7e', fontSize: '0.85rem', fontWeight: 500 }}>Fill in your details to generate a live token:</p>
-              <input type="text" className="input-field" placeholder="Patient Full Name" value={patientName} onChange={e => setPatientName(e.target.value)} required disabled={isBooking} />
+              
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                <button type="button" onClick={() => setConsultationType('IN_PERSON')} className={`btn ${consultationType === 'IN_PERSON' ? 'btn-primary' : 'btn-outline'}`} style={{ flex: 1, padding: '0.75rem', fontSize: '0.85rem' }}>
+                  🏥 Walk-in Visit
+                </button>
+                <button type="button" onClick={() => setConsultationType('VIDEO')} className={`btn ${consultationType === 'VIDEO' ? 'btn-primary' : 'btn-outline'}`} style={{ flex: 1, padding: '0.75rem', fontSize: '0.85rem' }}>
+                  📹 Video Consult
+                </button>
+              </div>
+
+              <input type="text" className="input-field" placeholder="Patient Full Name" value={patientName} onChange={e => setPatientName(e.target.value)} required disabled={isBooking} maxLength={50} />
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem' }}>
                 <input type="number" className="input-field" placeholder="Age" value={patientAge} onChange={e => setPatientAge(e.target.value)} disabled={isBooking} />
-                <input type="text" className="input-field" placeholder="Medical Issue" value={disease} onChange={e => setDisease(e.target.value)} disabled={isBooking} required />
+                <input type="text" className="input-field" placeholder="Medical Issue" value={disease} onChange={e => setDisease(e.target.value)} disabled={isBooking} required maxLength={150} />
               </div>
               <div style={{ background: '#f8fafc', padding: '0.9rem', borderRadius: 10, border: '1px solid #eef0f3', fontSize: '0.8rem', color: '#5a6a7e', textAlign: 'center' }}>
                 You&apos;ll be assigned a live token. Pay ₹{bookingClinic.fees || '500'} at the clinic desk.
                 <div style={{ fontSize: '0.72rem', color: '#007BFF', marginTop: '0.4rem', fontWeight: 600 }}>
                   🔔 SMS alert will be sent when your turn is near!
                 </div>
+              </div>
+
+              <div style={{ padding: '0.75rem', border: '1px solid #eef0f3', borderRadius: 10, background: useInsurance ? '#f0f9ff' : 'transparent' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', fontWeight: 600, color: '#1a2332', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={useInsurance} onChange={e => setUseInsurance(e.target.checked)} style={{ width: 16, height: 16 }} disabled={isBooking} />
+                  Cashless / Insurance Pre-Authorization
+                </label>
+                {useInsurance && (
+                  <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', animation: 'fadeIn 0.2s ease' }}>
+                    <input type="text" className="input-field" placeholder="Insurance Provider (e.g. Star Health)" value={insuranceProvider} onChange={e => setInsuranceProvider(e.target.value)} required disabled={isBooking} maxLength={50} style={{ padding: '0.6rem' }} />
+                    <input type="text" className="input-field" placeholder="Policy Number (Optional)" value={insurancePolicy} onChange={e => setInsurancePolicy(e.target.value)} disabled={isBooking} maxLength={50} style={{ padding: '0.6rem' }} />
+                    <label style={{ fontSize: '0.75rem', color: '#5a6a7e', fontWeight: 600 }}>Upload ID Card Photo *</label>
+                    <input type="file" accept="image/*" onChange={e => setInsuranceImage(e.target.files?.[0] || null)} required disabled={isBooking} style={{ fontSize: '0.8rem' }} />
+                  </div>
+                )}
               </div>
               {!bookingClinic.is_open ? (
                 <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '1.5rem', borderRadius: '12px', textAlign: 'center', marginBottom: '1.5rem' }}>
@@ -759,7 +1078,8 @@ function HomeContent() {
           </div>
         </div>
       )}
-    </main>
+      </main>
+    </>
   );
 }
 
@@ -915,9 +1235,9 @@ const ClinicCard = React.memo(function ClinicCard({ clinic, isFavorite, onFavori
         {showQR && (
           <div style={{ marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: '1px solid #eef0f3', textAlign: 'center' }}>
             <p style={{ fontSize: '0.78rem', color: '#5a6a7e', marginBottom: '0.75rem', fontWeight: 500 }}>Scan to add this clinic to favourites on another device</p>
-            <div style={{ background: 'white', padding: '0.75rem', borderRadius: 10, display: 'inline-block', border: '1px solid #eef0f3', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-              <QRCodeSVG value={patientUrl} size={130} />
-            </div>
+                  <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: 12, border: '1px solid #eef0f3', display: 'flex', justifyContent: 'center' }}>
+                    <DynamicQRCodeSVG value={patientUrl} size={150} level="M" />
+                  </div>
           </div>
         )}
       </div>

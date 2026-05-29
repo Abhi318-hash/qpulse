@@ -60,6 +60,48 @@
         { "fieldPath": "created_at", "order": "ASCENDING" }
       ]
     }
+    ,
+    {
+      "collectionGroup": "hospitals",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "org_id", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "clinics",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "hospital_id", "order": "ASCENDING" },
+        { "fieldPath": "is_hidden", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "clinics",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "org_id", "order": "ASCENDING" },
+        { "fieldPath": "is_hidden", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "org_requests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "submitted_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "system_audits",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "actor_phone", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ]
+    }
   ],
   "fieldOverrides": []
 }

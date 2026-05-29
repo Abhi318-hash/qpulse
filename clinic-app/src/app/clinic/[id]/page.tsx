@@ -16,7 +16,9 @@ import {
   markAsNoShow,
   moveRemainingQueueToTomorrow,
   assignSpilloverTokens,
-  restoreLatePatient
+  restoreLatePatient,
+  updateInsuranceStatus,
+  getPatientProfile
 } from '@/lib/actions';
 import { checkIsAdmin } from '@/lib/adminAuth';
 import { 
@@ -30,9 +32,11 @@ import {
   Plus, Power, PowerOff, Check, CheckCircle, X, MapPin, Stethoscope,
   Edit2, Loader2, LogOut, FileText, UserPlus, Zap, History,
   Search, Phone, Clock, IndianRupee, Printer, GraduationCap,
-  ChevronRight, Users, TrendingUp
+  ChevronRight, Users, TrendingUp, AlertTriangle
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { generatePrescriptionPDF } from '@/lib/generatePrescriptionPDF';
+import Image from 'next/image';
 import Link from 'next/link';
 import DoctorAvatar from '@/components/DoctorAvatar';
 
@@ -127,6 +131,7 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
   const [modalFee, setModalFee] = useState('');
   const [modalPaymentMode, setModalPaymentMode] = useState('cash');
   const [modalPrescriptionFile, setModalPrescriptionFile] = useState<File | null>(null);
+  const [modalGeneratePDF, setModalGeneratePDF] = useState(true);
   const [isCompleting, setIsCompleting] = useState(false);
 
   // Advancing Queue
@@ -146,6 +151,10 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
   const [patientHistoryData, setPatientHistoryData] = useState<any[] | null>(null);
   const [patientHistoryError, setPatientHistoryError] = useState<string>('');
   const [loadingPatientHistory, setLoadingPatientHistory] = useState(false);
+
+  // Insurance Verification Modal State
+  const [insuranceApp, setInsuranceApp] = useState<any>(null);
+  const [isVerifyingInsurance, setIsVerifyingInsurance] = useState(false);
 
   const exportToExcel = () => {
     if (!historyData || historyData.length === 0) {
@@ -290,9 +299,50 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
         currentServing.patient_name
       );
 
-      // 2. Upload prescription file if present
+      // 2. Upload prescription file or auto-generate PDF
       const prescriptionUrls: string[] = [];
-      if (modalPrescriptionFile) {
+      
+      // Auto-generate PDF if it's a VIDEO consultation or if explicitly requested
+      if (currentServing.consultation_type === 'VIDEO' || modalGeneratePDF) {
+        const patientSnap = await getPatientProfile(patientId);
+        const pData: any = patientSnap || {};
+        const pdfBlob = generatePrescriptionPDF({
+          clinicName: clinic.name || 'Q-Pulse Clinic',
+          doctorName: clinic.doctor_name || 'Doctor',
+          specialization: clinic.specialization || 'General',
+          clinicAddress: clinic.location || '',
+          clinicPhone: clinic.contact_number || '',
+          patientName: currentServing.patient_name,
+          patientAge: currentServing.age || '',
+          patientPhone: currentServing.user_phone,
+          patientGender: pData.gender || '',
+          patientBloodGroup: pData.blood_group || '',
+          date: new Date().toLocaleDateString(),
+          chiefComplaint: modalChiefComplaint || currentServing.disease || 'General Checkup',
+          diagnosis: modalDiagnosis || 'Healthy checkup',
+          vitals: {
+            ...(modalBpSystolic ? { bpSystolic: parseInt(modalBpSystolic) } : {}),
+            ...(modalBpDiastolic ? { bpDiastolic: parseInt(modalBpDiastolic) } : {}),
+            ...(modalHeartRate ? { heartRate: parseInt(modalHeartRate) } : {}),
+            ...(modalTemp ? { temperature: parseFloat(modalTemp) } : {}),
+            ...(modalWeight ? { weightKg: parseFloat(modalWeight) } : {}),
+            ...(modalSpo2 ? { spo2: parseInt(modalSpo2) } : {}),
+          },
+          medications: modalMedications.filter(m => m.name.trim() !== ''),
+          testsOrdered: modalTests ? modalTests.split(',').map(t => t.trim()).filter(t => t !== '') : [],
+          followUpDate: modalFollowUp,
+          doctorNotes: modalNotes
+        });
+
+        const pdfFile = new File([pdfBlob], `Prescription_${currentServing.patient_name}.pdf`, { type: 'application/pdf' });
+        const { downloadUrl } = await uploadFileToStorage(
+          patientId,
+          pdfFile,
+          'prescriptions'
+        );
+        prescriptionUrls.push(downloadUrl);
+      } else if (modalPrescriptionFile) {
+        // Fallback to manual file upload if PDF wasn't auto-generated
         const { downloadUrl } = await uploadFileToStorage(
           patientId,
           modalPrescriptionFile,
@@ -331,7 +381,12 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
       await revokeClinicAccess(patientId, id);
 
       // 5. Advance token queue
-      await advanceTokenQueue(id, currentServing.id, recordData.consultationFee);
+      await advanceTokenQueue(
+        id, 
+        currentServing.id, 
+        recordData.consultationFee, 
+        prescriptionUrls.length > 0 ? prescriptionUrls[0] : undefined
+      );
 
       // Reset states
       setShowCompleteModal(false);
@@ -430,6 +485,23 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
   });
 
   // ─── RENDER ───────────────────────────────────────────────────────────────
+  if (clinic?.status === 'SUSPENDED') {
+    return (
+      <div style={{ display: 'grid', placeItems: 'center', minHeight: '100vh', background: 'var(--bg-color)', padding: '2rem' }}>
+        <div className="clinic-card" style={{ maxWidth: 450, textAlign: 'center', border: '1px solid rgba(220,53,69,0.3)', background: 'rgba(220,53,69,0.05)', padding: '2rem' }}>
+          <AlertTriangle size={48} color="#dc3545" style={{ margin: '0 auto 1rem' }} />
+          <h2 style={{ fontSize: '1.4rem', color: '#dc3545', marginBottom: '0.5rem' }}>Clinic Suspended</h2>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: 1.5 }}>
+            This clinic has been suspended by the administrator. Access to the staff dashboard is temporarily disabled.
+          </p>
+          <button onClick={() => { signOut(auth); router.push('/'); }} className="btn btn-primary" style={{ background: '#dc3545' }}>
+            Logout
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <div className="portal-clinical no-print fade-in" style={{ minHeight: '100vh' }}>
@@ -614,7 +686,37 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
                     </h3>
                     <p style={{ margin: '0 0 1.5rem 0', color: '#5a6a7e', fontSize: '0.9rem' }}>
                       {currentServing.age} yrs &nbsp;·&nbsp; {currentServing.disease}
+                      {currentServing.insurance && (
+                        <span 
+                          onClick={() => currentServing.insurance?.verification_status === 'PENDING' && setInsuranceApp(currentServing)}
+                          style={{
+                            display: 'inline-block', marginLeft: '0.5rem', fontSize: '0.65rem', padding: '2px 6px', borderRadius: '12px', fontWeight: 800, cursor: currentServing.insurance?.verification_status === 'PENDING' ? 'pointer' : 'default',
+                            background: currentServing.insurance.verification_status === 'PENDING' ? '#fff3cd' : currentServing.insurance.verification_status === 'VERIFIED' ? '#d4edda' : '#f8d7da',
+                            color: currentServing.insurance.verification_status === 'PENDING' ? '#856404' : currentServing.insurance.verification_status === 'VERIFIED' ? '#155724' : '#721c24',
+                            border: `1px solid ${currentServing.insurance.verification_status === 'PENDING' ? '#ffeeba' : currentServing.insurance.verification_status === 'VERIFIED' ? '#c3e6cb' : '#f5c6cb'}`
+                          }}>
+                          {currentServing.insurance.verification_status === 'PENDING' ? 'VERIFY INS' : `INS: ${currentServing.insurance.verification_status}`}
+                        </span>
+                      )}
                     </p>
+
+                    {currentServing.consultation_type === 'VIDEO' && (
+                      <div style={{ marginBottom: '1.5rem' }}>
+                        <Link
+                          href={`/consult/${currentServing.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn btn-primary"
+                          style={{
+                            width: '100%', padding: '0.9rem', fontSize: '1rem', fontWeight: 700,
+                            background: '#25D366', borderColor: '#25D366', color: 'white',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem'
+                          }}
+                        >
+                          <span style={{ fontSize: '1.2rem' }}>📹</span> Start Video Call
+                        </Link>
+                      </div>
+                    )}
 
                     <button
                       onClick={() => {
@@ -814,9 +916,27 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
                                   padding: '2px 7px', borderRadius: '12px', fontWeight: 800, letterSpacing: '0.05em'
                                 }}>YESTERDAY</span>
                               )}
+                              {app.consultation_type === 'VIDEO' && (
+                                <span style={{
+                                  fontSize: '0.6rem', background: '#f0ebff', color: '#6b21a8',
+                                  padding: '2px 7px', borderRadius: '12px', fontWeight: 800, letterSpacing: '0.05em', border: '1px solid #d8b4fe'
+                                }}>📹 VIDEO</span>
+                              )}
                             </h4>
-                              <span style={{ fontSize: '0.75rem', color: '#5a6a7e' }}>
+                              <span style={{ fontSize: '0.75rem', color: '#5a6a7e', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                                 {app.age} yrs &nbsp;·&nbsp; {app.disease}
+                                {app.insurance && (
+                                  <span 
+                                    onClick={() => app.insurance?.verification_status === 'PENDING' && setInsuranceApp(app)}
+                                    style={{
+                                      fontSize: '0.6rem', padding: '2px 6px', borderRadius: '12px', fontWeight: 800, cursor: app.insurance?.verification_status === 'PENDING' ? 'pointer' : 'default',
+                                      background: app.insurance.verification_status === 'PENDING' ? '#fff3cd' : app.insurance.verification_status === 'VERIFIED' ? '#d4edda' : '#f8d7da',
+                                      color: app.insurance.verification_status === 'PENDING' ? '#856404' : app.insurance.verification_status === 'VERIFIED' ? '#155724' : '#721c24',
+                                      border: `1px solid ${app.insurance.verification_status === 'PENDING' ? '#ffeeba' : app.insurance.verification_status === 'VERIFIED' ? '#c3e6cb' : '#f5c6cb'}`
+                                    }}>
+                                    {app.insurance.verification_status === 'PENDING' ? 'VERIFY INS' : `INS: ${app.insurance.verification_status}`}
+                                  </span>
+                                )}
                               </span>
                             </div>
                             <div style={{
@@ -1256,10 +1376,27 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
                 <textarea className="input-field" rows={2} value={modalNotes} onChange={e => setModalNotes(e.target.value)} placeholder="Additional clinical notes..." style={{ resize: 'none' }} />
               </div>
 
-              <div>
-                <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Upload Prescription Photo (optional)</label>
-                <input type="file" accept="image/*,application/pdf" onChange={e => setModalPrescriptionFile(e.target.files?.[0] || null)} style={{ fontSize: '0.85rem' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#f8fafc', padding: '0.75rem', borderRadius: 8, border: '1px solid #eef0f3' }}>
+                <input 
+                  type="checkbox" 
+                  id="genPdf" 
+                  checked={currentServing.consultation_type === 'VIDEO' ? true : modalGeneratePDF} 
+                  onChange={e => setModalGeneratePDF(e.target.checked)} 
+                  disabled={currentServing.consultation_type === 'VIDEO'}
+                  style={{ width: '18px', height: '18px', cursor: currentServing.consultation_type === 'VIDEO' ? 'not-allowed' : 'pointer' }}
+                />
+                <label htmlFor="genPdf" style={{ fontSize: '0.85rem', color: '#1a2332', fontWeight: 600, cursor: currentServing.consultation_type === 'VIDEO' ? 'not-allowed' : 'pointer' }}>
+                  Auto-Generate Digital Prescription (PDF)
+                  {currentServing.consultation_type === 'VIDEO' && <span style={{ color: '#007BFF', marginLeft: '0.5rem', fontSize: '0.75rem' }}>(Required for Video Consults)</span>}
+                </label>
               </div>
+
+              {!modalGeneratePDF && currentServing.consultation_type !== 'VIDEO' && (
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Upload Prescription Photo (optional)</label>
+                  <input type="file" accept="image/*,application/pdf" onChange={e => setModalPrescriptionFile(e.target.files?.[0] || null)} style={{ fontSize: '0.85rem' }} />
+                </div>
+              )}
 
               <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '0.9rem', fontSize: '1rem', fontWeight: 700 }} disabled={isCompleting}>
                 {isCompleting ? <Loader2 size={20} className="animate-spin" /> : 'Finalize and Call Next Patient'}
@@ -1362,6 +1499,72 @@ export default function ClinicRecipientPage({ params }: { params: Promise<{ id: 
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── INSURANCE VERIFICATION MODAL ── */}
+      {insuranceApp && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(10,15,25,0.85)', zIndex: 100000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', backdropFilter: 'blur(8px)'
+        }} onClick={(e) => e.target === e.currentTarget && setInsuranceApp(null)}>
+          <div style={{
+            background: '#fff', width: '100%', maxWidth: 500, borderRadius: 24,
+            display: 'flex', flexDirection: 'column',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.2)', animation: 'fadeIn 0.2s ease'
+          }}>
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid #eef0f3', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', borderTopLeftRadius: 24, borderTopRightRadius: 24 }}>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#1a2332', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <CheckCircle size={20} color="#007BFF" /> Verify Insurance
+              </h3>
+              <button onClick={() => setInsuranceApp(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#5a6a7e' }}><X size={20} /></button>
+            </div>
+            
+            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <span style={{ fontSize: '0.75rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 800 }}>Provider Name</span>
+                <p style={{ margin: '0.2rem 0 0', fontWeight: 700, color: '#1a2332', fontSize: '1rem' }}>{insuranceApp.insurance.provider_name}</p>
+              </div>
+              {insuranceApp.insurance.policy_number && (
+                <div>
+                  <span style={{ fontSize: '0.75rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 800 }}>Policy Number</span>
+                  <p style={{ margin: '0.2rem 0 0', fontWeight: 700, color: '#1a2332', fontSize: '1rem' }}>{insuranceApp.insurance.policy_number}</p>
+                </div>
+              )}
+              {insuranceApp.insurance.card_image_url && (
+                <div>
+                  <span style={{ fontSize: '0.75rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 800, display: 'block', marginBottom: '0.5rem' }}>ID Card Document</span>
+                  <a href={insuranceApp.insurance.card_image_url} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1rem', background: '#f0f7ff', color: '#007BFF', borderRadius: '12px', fontSize: '0.85rem', fontWeight: 700, textDecoration: 'none', border: '1px solid rgba(0,123,255,0.2)' }}>
+                    <FileText size={16} /> View Uploaded Image
+                  </a>
+                </div>
+              )}
+
+              {insuranceApp.insurance.verification_status === 'PENDING' && (
+                <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+                  <button onClick={async () => {
+                    setIsVerifyingInsurance(true);
+                    await updateInsuranceStatus(insuranceApp.id, 'VERIFIED');
+                    setIsVerifyingInsurance(false);
+                    setInsuranceApp(null);
+                  }} disabled={isVerifyingInsurance} className="btn btn-primary" style={{ flex: 1, padding: '0.9rem', fontSize: '1rem', fontWeight: 700, background: '#28a745', borderColor: '#28a745' }}>
+                    {isVerifyingInsurance ? <Loader2 size={20} className="animate-spin" /> : 'Verify'}
+                  </button>
+                  <button onClick={async () => {
+                    if (confirm('Are you sure you want to reject this insurance?')) {
+                      setIsVerifyingInsurance(true);
+                      await updateInsuranceStatus(insuranceApp.id, 'REJECTED');
+                      setIsVerifyingInsurance(false);
+                      setInsuranceApp(null);
+                    }
+                  }} disabled={isVerifyingInsurance} className="btn btn-outline" style={{ flex: 1, padding: '0.9rem', fontSize: '1rem', fontWeight: 700, color: '#dc3545', borderColor: 'rgba(220,53,69,0.3)' }}>
+                    Reject
+                  </button>
                 </div>
               )}
             </div>

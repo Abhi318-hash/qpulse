@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
-
 /* ============================================================
    DESIGN SYSTEM — Q-PULSE CLINIC
    Dark (default) + Clinical Light (data-theme="light")
@@ -83,10 +81,12 @@
   padding: 0;
   margin: 0;
   -webkit-tap-highlight-color: transparent;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
 }
 
 body {
-  font-family: 'Outfit', 'Inter', sans-serif;
+  font-family: var(--font-outfit), var(--font-inter), sans-serif;
   background: radial-gradient(circle at top left, var(--bg-grad-1), var(--bg-grad-2));
   color: var(--text-primary);
   min-height: 100vh;
@@ -255,7 +255,7 @@ a {
   background: var(--btn-glass);
   border: 1.5px solid var(--glass-border);
   border-radius: 10px;
-  color: var(--text-primary);
+  color: #000000;
   font-family: inherit;
   font-size: 0.95rem;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
@@ -567,4 +567,27 @@ a {
     transform: none;
     box-shadow: 0 4px 15px rgba(0, 123, 255, 0.3);
   }
+}
+
+/* ============================================================
+   GOOGLE TRANSLATE OVERRIDES
+   ============================================================ */
+/* Hide the hover tooltip balloon */
+.goog-te-balloon-frame {
+  display: none !important;
+}
+#goog-gt-tt {
+  display: none !important;
+}
+/* Remove yellow background highlight on hovered translated text */
+.goog-text-highlight {
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+/* Hide the top banner */
+.goog-te-banner-frame.skiptranslate {
+  display: none !important;
+}
+body {
+  top: 0px !important;
 }

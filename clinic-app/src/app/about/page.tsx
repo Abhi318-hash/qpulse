@@ -2,25 +2,80 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Activity, Bug, Code, HelpCircle, Mail, MapPin, Server, Terminal, User, Zap } from 'lucide-react';
+import { Activity, Bug, Code, Mail, Server, Zap, Building, Stethoscope, Rocket, ShieldAlert } from 'lucide-react';
 
 export default function AboutPage() {
   return (
     <>
-      <main className="container fade-in" style={{ maxWidth: '800px', margin: '0 auto', paddingTop: '3rem' }}>
+      <main className="container fade-in" style={{ maxWidth: '900px', margin: '0 auto', paddingTop: '3rem', paddingBottom: '3rem' }}>
         
+        {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
           <div style={{ display: 'inline-flex', padding: '1rem', background: 'var(--glass-base)', borderRadius: '50%', border: '1px solid var(--glass-border)', marginBottom: '1rem' }}>
              <Activity size={40} className="pulse-primary" style={{ color: 'var(--accent-primary)' }} />
           </div>
           <h1 style={{ fontSize: '2.5rem', fontWeight: 900, marginBottom: '0.5rem', background: 'linear-gradient(to right, #00d2ff, #ffffff)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-            About Q-PULSE
+            Q-PULSE for Providers
           </h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem' }}>
-            Next-Generation Medical Queue Engine
+          <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem', maxWidth: 500, margin: '0 auto' }}>
+            The central hub for hospital administrators, clinic staff, and new partners to manage and scale their medical queues.
           </p>
         </div>
 
+        {/* ── B2B Portals Grid ── */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', marginBottom: '4rem' }}>
+          
+          {/* Org Admin Portal */}
+          <Link href="/login" style={{ textDecoration: 'none' }}>
+            <div className="glass-container hover-lift" style={{ padding: '2rem', height: '100%', display: 'flex', flexDirection: 'column', transition: 'all 0.3s' }}>
+              <div style={{ background: 'rgba(0, 123, 255, 0.1)', width: 50, height: 50, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1rem' }}>
+                <Building size={24} color="#007BFF" />
+              </div>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--text-primary)' }}>Hospital / Org Admin</h2>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', flex: 1, margin: 0, lineHeight: 1.5 }}>
+                Login to manage your hospital branches, add clinics, and view organization-wide analytics.
+              </p>
+              <div style={{ marginTop: '1.5rem', fontSize: '0.85rem', fontWeight: 700, color: '#007BFF', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                Access Portal &rarr;
+              </div>
+            </div>
+          </Link>
+
+          {/* Clinic Staff Portal */}
+          <Link href="/clinic/login" style={{ textDecoration: 'none' }}>
+            <div className="glass-container hover-lift" style={{ padding: '2rem', height: '100%', display: 'flex', flexDirection: 'column', transition: 'all 0.3s' }}>
+              <div style={{ background: 'rgba(16, 185, 129, 0.1)', width: 50, height: 50, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1rem' }}>
+                <Stethoscope size={24} color="#10b981" />
+              </div>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--text-primary)' }}>Clinic Staff</h2>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', flex: 1, margin: 0, lineHeight: 1.5 }}>
+                Login to your clinic dashboard to manage live patient queues, book appointments, and advance tokens.
+              </p>
+              <div style={{ marginTop: '1.5rem', fontSize: '0.85rem', fontWeight: 700, color: '#10b981', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                Access Portal &rarr;
+              </div>
+            </div>
+          </Link>
+
+          {/* Partner Onboarding */}
+          <Link href="/onboard" style={{ textDecoration: 'none' }}>
+            <div className="glass-container hover-lift" style={{ padding: '2rem', height: '100%', display: 'flex', flexDirection: 'column', transition: 'all 0.3s' }}>
+              <div style={{ background: 'rgba(99, 102, 241, 0.1)', width: 50, height: 50, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1rem' }}>
+                <Rocket size={24} color="#6366f1" />
+              </div>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--text-primary)' }}>Partner with Us</h2>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', flex: 1, margin: 0, lineHeight: 1.5 }}>
+                New to Q-PULSE? Submit an application to digitize your clinic or hospital queue system today.
+              </p>
+              <div style={{ marginTop: '1.5rem', fontSize: '0.85rem', fontWeight: 700, color: '#6366f1', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                Apply Now &rarr;
+              </div>
+            </div>
+          </Link>
+
+        </div>
+
+        {/* ── Developer Info ── */}
         <div className="glass-container" style={{ padding: '2.5rem', marginBottom: '2rem' }}>
           <h2 style={{ fontSize: '1.4rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '1rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Code size={20} color="var(--accent-primary)" /> Developer Information
@@ -34,7 +89,7 @@ export default function AboutPage() {
                 <div style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
                    <Server size={18} color="var(--accent-primary)" style={{ marginBottom: '0.5rem' }} />
                    <h3 style={{ fontSize: '0.9rem', margin: '0 0 0.3rem 0', color: 'var(--text-primary)' }}>Architecture</h3>
-                   <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0 }}>Next.js 15 PWA Edge Engine</p>
+                   <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0 }}>Next.js Edge Engine</p>
                 </div>
                 <div style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
                    <Zap size={18} color="var(--success)" style={{ marginBottom: '0.5rem' }} />
@@ -45,6 +100,7 @@ export default function AboutPage() {
           </div>
         </div>
 
+        {/* ── Help & Support ── */}
         <div className="glass-container" style={{ padding: '2.5rem' }}>
           <h2 style={{ fontSize: '1.4rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '1rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Bug size={20} color="var(--danger)" /> Help & Support
@@ -63,11 +119,22 @@ export default function AboutPage() {
           </a>
         </div>
 
-        <div style={{ textAlign: 'center', marginTop: '3rem', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-           <p>© {new Date().getFullYear()} Q-PULSE Developers. All rights reserved.</p>
+        {/* Super Admin / Footer */}
+        <div style={{ textAlign: 'center', marginTop: '3rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+           <Link href="/admin/login" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-secondary)', fontSize: '0.75rem', textDecoration: 'none', opacity: 0.6 }}>
+             <ShieldAlert size={12} /> System Admin Portal
+           </Link>
+           <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', margin: 0 }}>© {new Date().getFullYear()} Q-PULSE Developers. All rights reserved.</p>
         </div>
 
       </main>
+      <style dangerouslySetInnerHTML={{__html: `
+        .hover-lift:hover {
+          transform: translateY(-5px);
+          box-shadow: 0 10px 25px rgba(0,0,0,0.2) !important;
+          border-color: rgba(255,255,255,0.2) !important;
+        }
+      `}} />
     </>
   );
 }

@@ -37,6 +37,7 @@ export function subscribeToActiveClinics(callback: (clinics: any[]) => void, onE
   );
   return onSnapshot(q, (snapshot) => {
     let clinics = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    clinics = clinics.filter((c: any) => c.status !== 'SUSPENDED');
     // Sort in JS to avoid requiring composite index
     clinics.sort((a: any, b: any) => {
       const dateA = a.created_at?.toMillis ? a.created_at.toMillis() : 0;
@@ -198,7 +199,9 @@ export async function addPatientToken(
   fees: number,
   disease: string,
   userPhone: string = '',
-  bookingSource: 'online' | 'walkin' | 'staff' | 'whatsapp' = 'online'
+  bookingSource: 'online' | 'walkin' | 'staff' | 'whatsapp' = 'online',
+  insurance?: { provider_name: string; policy_number?: string; card_image_url?: string; verification_status: 'PENDING' | 'VERIFIED' | 'REJECTED' },
+  consultation_type: 'IN_PERSON' | 'VIDEO' = 'IN_PERSON'
 ): Promise<string> {
   const clinicRef = doc(db, CLINICS_COL, clinicId);
   const now = new Date();
@@ -244,6 +247,7 @@ export async function addPatientToken(
       fees_paid:       false,
       payment_mode:    'cash',
       booking_source:  userPhone ? bookingSource : 'walkin',
+      consultation_type,
       // Timing fields for analytics (Phase 5)
       queued_at:       serverTimestamp(),
       date_string:     todayStr,
@@ -256,6 +260,8 @@ export async function addPatientToken(
         your_turn:           false,
         completed:           false,
       },
+      // Insurance fields — Phase 5
+      insurance: insurance || null,
       created_at: serverTimestamp(),
     });
 
@@ -332,7 +338,8 @@ export async function getClinicHistory(clinicId: string, limitCount: number = 20
 export async function advanceTokenQueue(
   clinicId: string,
   completedAppointmentId: string,
-  finalFee: number = 0
+  finalFee: number = 0,
+  prescriptionUrl?: string
 ) {
   const appRef = doc(db, APPOINTMENTS_COL, completedAppointmentId);
   const snap = await getDoc(appRef);
@@ -348,14 +355,21 @@ export async function advanceTokenQueue(
     : null;
 
   // 1. Mark current appointment as COMPLETED
-  await updateDoc(appRef, {
+  const updateData: any = {
     status:             'COMPLETED',
     fees:               finalFee > 0 ? finalFee : currentSavedFee,
     fees_paid:          true,
     completed_at:       serverTimestamp(),
     wait_time_minutes:  waitMins,
     'notifications_sent.completed': true,
-  });
+  };
+
+  if (prescriptionUrl) {
+    updateData.prescription_url = prescriptionUrl;
+    updateData.prescription_uploaded = true;
+  }
+
+  await updateDoc(appRef, updateData);
 
   // 2. Find next patient in queue
   const q = query(
@@ -572,42 +586,74 @@ export async function getUserMedicalHistory(userPhone: string, limitCount: numbe
 
 export async function ensurePatientProfile(uid: string, phone: string, name: string = '') {
   if (!uid || !phone) return;
-  const patientRef = doc(db, PATIENTS_COL, uid);
-  const snap = await getDoc(patientRef);
-  if (!snap.exists()) {
-    await setDoc(patientRef, {
-      id:         uid,
-      phone:      phone,
-      full_name:  name,
-      medical_background: {
-        chronic_conditions: [],
-        allergies:          [],
-        current_medications: [],
-        surgeries:          [],
-        family_history:     [],
-      },
-      stats: {
-        total_visits:          0,
-        total_spent:           0,
-        clinics_visited:       [],
-        last_visited_clinic_id: '',
-      },
-      data_consent:     false,
-      created_at:       serverTimestamp(),
-      updated_at:       serverTimestamp(),
-    });
+  const q = query(
+    collection(db, PATIENTS_COL),
+    where('phone', '==', phone)
+  );
+  const snap = await getDocs(q);
+  const q2 = query(
+    collection(db, PATIENTS_COL),
+    where('recovery_phone', '==', phone)
+  );
+  const snap2 = await getDocs(q2);
+
+  if (!snap.empty || !snap2.empty) {
+    return; // Profile already exists (either primary or recovery matched)
   }
+
+  // Create new profile mapped to their current auth uid
+  const patientRef = doc(db, PATIENTS_COL, uid);
+  await setDoc(patientRef, {
+    id:         uid,
+    phone:      phone,
+    recovery_phone: null,
+    full_name:  name,
+    medical_background: {
+      chronic_conditions: [],
+      allergies:          [],
+      current_medications: [],
+      surgeries:          [],
+      family_history:     [],
+    },
+    stats: {
+      total_visits:          0,
+      total_spent:           0,
+      clinics_visited:       [],
+      last_visited_clinic_id: '',
+    },
+    data_consent:     false,
+    created_at:       serverTimestamp(),
+    updated_at:       serverTimestamp(),
+  });
 }
 
-export async function getPatientProfile(uid: string) {
+export async function getPatientProfile(uid: string, phone?: string) {
   if (!uid) return null;
+  
+  if (phone) {
+    const q1 = query(collection(db, PATIENTS_COL), where('phone', '==', phone));
+    const snap1 = await getDocs(q1);
+    if (!snap1.empty) return { id: snap1.docs[0].id, ...snap1.docs[0].data() };
+
+    const q2 = query(collection(db, PATIENTS_COL), where('recovery_phone', '==', phone));
+    const snap2 = await getDocs(q2);
+    if (!snap2.empty) return { id: snap2.docs[0].id, ...snap2.docs[0].data() };
+  }
+  
   const snap = await getDoc(doc(db, PATIENTS_COL, uid));
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
-export async function updatePatientProfile(uid: string, data: Partial<any>) {
+export async function updatePatientProfile(uid: string, data: Partial<any>, phone?: string) {
   if (!uid) return;
-  await updateDoc(doc(db, PATIENTS_COL, uid), {
+  
+  let targetId = uid;
+  if (phone) {
+    const p = await getPatientProfile(uid, phone);
+    if (p) targetId = p.id;
+  }
+  
+  await updateDoc(doc(db, PATIENTS_COL, targetId), {
     ...data,
     updated_at: serverTimestamp(),
   });
@@ -621,3 +667,8 @@ export async function saveFcmToken(phone: string, token: string) {
   });
 }
 
+export async function updateInsuranceStatus(appointmentId: string, status: 'VERIFIED' | 'REJECTED') {
+  await updateDoc(doc(db, APPOINTMENTS_COL, appointmentId), {
+    'insurance.verification_status': status,
+  });
+}

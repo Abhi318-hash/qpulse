@@ -14,7 +14,7 @@ import {
   Building, Stethoscope, Users, CreditCard, Plus, 
   ArrowUpRight, Loader2, LogOut, Settings, HelpCircle, 
   Power, PowerOff, Shield, AlertTriangle, CheckCircle, X,
-  TrendingUp, BarChart2
+  TrendingUp, BarChart2, Hospital
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -29,6 +29,15 @@ export default function OrgDashboard() {
   const [addingClinic, setAddingClinic] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
+  
+  // Hospital management
+  const [hospitals, setHospitals] = useState<any[]>([]);
+  const [showHospitalModal, setShowHospitalModal] = useState(false);
+  const [addingHospital, setAddingHospital] = useState(false);
+  const [newHospitalName, setNewHospitalName] = useState('');
+  const [newHospitalCity, setNewHospitalCity] = useState('');
+  const [newHospitalAddress, setNewHospitalAddress] = useState('');
+  const [newClinicHospitalId, setNewClinicHospitalId] = useState('none');
 
   const generateApiKey = async () => {
     if (!org) return;
@@ -90,16 +99,30 @@ export default function OrgDashboard() {
         const adminRef = doc(db, 'admins', phone);
         const adminSnap = await getDoc(adminRef);
 
-        if (!adminSnap.exists() || adminSnap.data().role !== 'org_admin') {
-          console.warn('Unauthorized access attempt to org dashboard by:', phone);
-          router.push('/onboard'); // Redirect to onboard if not an org admin yet
+        if (!adminSnap.exists()) {
+          router.push('/onboard');
           return;
         }
         
         const admData = adminSnap.data();
+        let orgId = admData.org_id;
+
+        if (admData.role === 'super_admin') {
+          const impersonateId = new URLSearchParams(window.location.search).get('impersonate');
+          if (impersonateId) {
+            orgId = impersonateId;
+          } else {
+            router.push('/super-admin');
+            return;
+          }
+        } else if (admData.role !== 'org_admin') {
+          console.warn('Unauthorized access attempt to org dashboard by:', phone);
+          router.push('/onboard');
+          return;
+        }
+
         setAdminRecord(admData);
 
-        const orgId = admData.org_id;
         if (!orgId) {
           router.push('/onboard');
           return;
@@ -122,6 +145,15 @@ export default function OrgDashboard() {
           const clinicsList = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
           setClinics(clinicsList);
           setLoading(false);
+        });
+
+        // 4. Subscribe to Hospitals belonging to this org (optional grouping layer)
+        const hospitalsQuery = query(
+          collection(db, 'hospitals'),
+          where('org_id', '==', orgId)
+        );
+        onSnapshot(hospitalsQuery, (snap) => {
+          setHospitals(snap.docs.map(d => ({ id: d.id, ...d.data() })));
         });
 
       } catch (err) {
@@ -161,7 +193,8 @@ export default function OrgDashboard() {
         location: newLocation || 'Main Center',
         fees: parseFloat(newFees) || 500,
         authorized_phone: finalPhone,
-        org_id: org.id, // Multi-tenant binding
+        org_id: org.id,
+        hospital_id: newClinicHospitalId === 'none' ? null : newClinicHospitalId,
         is_open: true,
         is_hidden: false,
         patient_count: 0,
@@ -189,6 +222,7 @@ export default function OrgDashboard() {
       setNewLocation('');
       setNewFees('500');
       setNewAuthPhone('');
+      setNewClinicHospitalId('none');
       alert('New clinic configured successfully!');
     } catch (err) {
       console.error(err);
@@ -210,18 +244,74 @@ export default function OrgDashboard() {
     }
   };
 
-  if (loading) {
+  const handleEditClinicPhone = async (clinicId: string, currentPhone: string) => {
+    const newPhone = window.prompt('Enter new authorized staff phone number (e.g. +91XXXXXXXXXX):', currentPhone);
+    if (!newPhone || newPhone === currentPhone) return;
+    
+    const cleanPhone = newPhone.replace(/[^0-9+]/g, '');
+    const finalPhone = cleanPhone.startsWith('+') ? cleanPhone : `+91${cleanPhone}`;
+    
+    try {
+      await updateDoc(doc(db, 'clinics', clinicId), {
+        authorized_phone: finalPhone,
+        updated_at: serverTimestamp()
+      });
+      alert('Staff phone number updated successfully!');
+    } catch (err) {
+      console.error(err);
+      alert('Failed to update phone number.');
+    }
+  };
+
+  const handleAddHospital = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newHospitalName.trim() || !org) return;
+    setAddingHospital(true);
+    try {
+      await addDoc(collection(db, 'hospitals'), {
+        name: newHospitalName.trim(),
+        city: newHospitalCity.trim() || org.city || '',
+        address: newHospitalAddress.trim(),
+        org_id: org.id,
+        status: 'ACTIVE',
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
+      });
+      setShowHospitalModal(false);
+      setNewHospitalName(''); setNewHospitalCity(''); setNewHospitalAddress('');
+    } catch (err) {
+      alert('Failed to add hospital. Please try again.');
+    } finally {
+      setAddingHospital(false);
+    }
+  };
+
+  if (loading || !org) {
     return (
-      <div style={{ display: 'grid', placeItems: 'center', minHeight: '100vh' }}>
-        <div style={{ textAlign: 'center' }}>
-          <Loader2 size={40} className="animate-spin" style={{ color: '#007BFF', margin: '0 auto 1rem' }} />
-          <p style={{ color: '#5a6a7e', fontWeight: 500 }}>Loading SaaS Workspace…</p>
+      <div style={{ display: 'grid', placeItems: 'center', minHeight: '100vh', background: 'var(--bg-color)' }}>
+        <Loader2 size={40} className="animate-spin" style={{ color: '#007BFF' }} />
+      </div>
+    );
+  }
+
+  if (adminRecord && adminRecord.is_active === false) {
+    return (
+      <div style={{ display: 'grid', placeItems: 'center', minHeight: '100vh', background: 'var(--bg-color)', padding: '2rem' }}>
+        <div className="clinic-card" style={{ maxWidth: 450, textAlign: 'center', border: '1px solid rgba(220,53,69,0.3)', background: 'rgba(220,53,69,0.05)' }}>
+          <AlertTriangle size={48} color="#dc3545" style={{ margin: '0 auto 1rem' }} />
+          <h2 style={{ fontSize: '1.4rem', color: '#dc3545', marginBottom: '0.5rem' }}>Workspace Suspended</h2>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: 1.5 }}>
+            Your organization workspace has been suspended by the administrator. Access to this dashboard and all clinics is temporarily disabled.
+          </p>
+          <button onClick={() => { signOut(auth); router.push('/'); }} className="btn btn-primary" style={{ background: '#dc3545' }}>
+            Logout
+          </button>
         </div>
       </div>
     );
   }
 
-  const isSuspended = org?.billing_status === 'suspended';
+  const isSuspended = org?.status === 'SUSPENDED';
 
   return (
     <main style={{ minHeight: '100vh', background: '#f8fafc', color: '#1a2332' }}>
@@ -302,20 +392,56 @@ export default function OrgDashboard() {
           ))}
         </div>
 
+        {/* Hospitals Section (Optional Tier) */}
+        {hospitals.length > 0 && (
+          <div style={{ marginBottom: '2rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h2 style={{ fontSize: '1.05rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.45rem', margin: 0 }}>
+                <Hospital size={18} color="#6366f1" /> Hospital Branches
+              </h2>
+              <button onClick={() => setShowHospitalModal(true)} className="btn btn-outline" style={{ fontSize: '0.8rem', padding: '0.4rem 0.75rem' }}>
+                <Plus size={13} /> Add Branch
+              </button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))', gap: '0.75rem' }}>
+              {hospitals.map(h => {
+                const branchClinics = clinics.filter(c => c.hospital_id === h.id);
+                return (
+                  <div key={h.id} style={{ background: 'white', border: '1px solid #eef0f3', borderRadius: 12, padding: '1rem 1.25rem', borderLeft: '3px solid #6366f1' }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1a2332', marginBottom: '0.2rem' }}>{h.name}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#5a6a7e', marginBottom: '0.5rem' }}>{h.city}{h.address ? ` · ${h.address}` : ''}</div>
+                    <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#6366f1' }}>{branchClinics.length} clinic room{branchClinics.length !== 1 ? 's' : ''}</div>
+                  </div>
+                );
+              })}
+              <button onClick={() => setShowHospitalModal(true)} style={{ background: 'transparent', border: '1.5px dashed #dee2e8', borderRadius: 12, padding: '1rem', cursor: 'pointer', color: '#94a3b8', fontSize: '0.82rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem' }} disabled={isSuspended}>
+                <Plus size={18} /><span>Add Branch</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Clinics Listing & Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
           <h2 style={{ fontSize: '1.05rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
             <Stethoscope size={18} color="#007BFF" /> Clinic Management
           </h2>
           
-          <button 
-            onClick={() => setShowAddModal(true)}
-            className="btn btn-primary" 
-            style={{ fontSize: '0.85rem', padding: '0.5rem 0.9rem' }}
-            disabled={isSuspended}
-          >
-            <Plus size={14} /> Add New Clinic
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {hospitals.length === 0 && (
+              <button onClick={() => setShowHospitalModal(true)} className="btn btn-outline" style={{ fontSize: '0.85rem', padding: '0.5rem 0.9rem' }} disabled={isSuspended}>
+                <Hospital size={14} /> Add Hospital Branch
+              </button>
+            )}
+            <button 
+              onClick={() => setShowAddModal(true)}
+              className="btn btn-primary" 
+              style={{ fontSize: '0.85rem', padding: '0.5rem 0.9rem' }}
+              disabled={isSuspended}
+            >
+              <Plus size={14} /> Add New Clinic
+            </button>
+          </div>
         </div>
 
         <div className="grid-clinics">
@@ -360,7 +486,12 @@ export default function OrgDashboard() {
                   </div>
                   <div>
                     <span style={{ fontSize: '0.62rem', color: '#5a6a7e', textTransform: 'uppercase', display: 'block' }}>Authorized Staff</span>
-                    <span style={{ fontSize: '0.78rem', color: '#1a2332', fontWeight: 600 }}>{clinic.authorized_phone}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <span style={{ fontSize: '0.78rem', color: '#1a2332', fontWeight: 600 }}>{clinic.authorized_phone}</span>
+                      <button onClick={() => handleEditClinicPhone(clinic.id, clinic.authorized_phone)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#007BFF', padding: 0 }} title="Change Staff Phone">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -490,6 +621,7 @@ export default function OrgDashboard() {
                   type="text" required className="input-field"
                   value={newClinicName} onChange={e => setNewClinicName(e.target.value)}
                   placeholder="e.g. Apollo Dental Suite, Orthopedics Room 2" 
+                  maxLength={50}
                 />
               </div>
 
@@ -499,6 +631,7 @@ export default function OrgDashboard() {
                   type="text" required className="input-field"
                   value={newDoctorName} onChange={e => setNewDoctorName(e.target.value)}
                   placeholder="Dr. John Smith" 
+                  maxLength={50}
                 />
               </div>
 
@@ -549,8 +682,63 @@ export default function OrgDashboard() {
                 />
               </div>
 
+              {hospitals.length > 0 && (
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Link to Hospital Branch <span style={{ fontWeight: 400, textTransform: 'none' }}>(optional)</span></label>
+                  <select className="input-field" style={{ height: 46 }} value={newClinicHospitalId} onChange={e => setNewClinicHospitalId(e.target.value)}>
+                    <option value="none">— Standalone clinic (no hospital) —</option>
+                    {hospitals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+                  </select>
+                </div>
+              )}
+
               <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.5rem' }} disabled={addingClinic}>
                 {addingClinic ? <Loader2 size={16} className="animate-spin" /> : 'Launch Clinic Room'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* ── ADD HOSPITAL MODAL ── */}
+      {showHospitalModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+          background: 'rgba(10,20,40,0.55)', backdropFilter: 'blur(8px)',
+          zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '1rem'
+        }} onClick={(e) => e.target === e.currentTarget && setShowHospitalModal(false)}>
+          <div className="clinic-card" style={{ width: '100%', maxWidth: 440, padding: 0, overflow: 'hidden', boxShadow: '0 24px 80px rgba(0,0,0,0.2)' }}>
+            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid #eef0f3', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '1rem', color: '#1a2332', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Hospital size={18} color="#6366f1" /> Add Hospital Branch
+              </h3>
+              <button onClick={() => setShowHospitalModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#5a6a7e' }}><X size={20} /></button>
+            </div>
+            <form onSubmit={handleAddHospital} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <p style={{ margin: 0, fontSize: '0.82rem', color: '#5a6a7e' }}>
+                Hospitals are optional. They let you group multiple clinic rooms under one physical location or branch.
+              </p>
+              <div>
+                <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Hospital / Branch Name *</label>
+                <input type="text" required className="input-field"
+                  value={newHospitalName} onChange={e => setNewHospitalName(e.target.value)}
+                  placeholder="e.g. Apollo Mumbai North, City Hospital Wing B" maxLength={50} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>City</label>
+                  <input type="text" className="input-field"
+                    value={newHospitalCity} onChange={e => setNewHospitalCity(e.target.value)}
+                    placeholder="Mumbai" />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Address</label>
+                  <input type="text" className="input-field"
+                    value={newHospitalAddress} onChange={e => setNewHospitalAddress(e.target.value)}
+                    placeholder="Andheri West" />
+                </div>
+              </div>
+              <button type="submit" className="btn btn-primary" style={{ width: '100%', background: '#6366f1' }} disabled={addingHospital}>
+                {addingHospital ? <Loader2 size={16} className="animate-spin" /> : <><Hospital size={15} /> Register Hospital Branch</>}
               </button>
             </form>
           </div>
