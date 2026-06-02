@@ -107,7 +107,8 @@ service cloud.firestore {
                        (isOrgAdmin() && request.resource.data.org_id == getCallerOrgId());
       allow update: if isSuperAdmin() ||
                        isClinicStaff(clinicId) ||
-                       (isOrgAdmin() && resource.data.org_id == getCallerOrgId());
+                       (isOrgAdmin() && resource.data.org_id == getCallerOrgId()) ||
+                       (isSignedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['last_issued_token', 'current_date_string', 'patient_count', 'updated_at']));
       allow delete: if false; // Cloud Function only
     }
 
@@ -119,7 +120,7 @@ service cloud.firestore {
         resource.data.user_phone == request.auth.token.phone_number ||
         isClinicStaff(resource.data.clinic_id) ||
         isSuperAdmin() ||
-        isOrgAdmin()
+        (isOrgAdmin() && get(/databases/$(database)/documents/clinics/$(resource.data.clinic_id)).data.org_id == getCallerOrgId())
       );
       allow create: if isSignedIn() && (
         request.resource.data.user_phone == request.auth.token.phone_number ||
