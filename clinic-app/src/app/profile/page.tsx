@@ -292,13 +292,22 @@ export default function ProfilePage() {
               </p>
             </div>
           </div>
-          <button 
-            onClick={() => { signOut(auth); router.push('/'); }}
-            className="btn btn-outline" 
-            style={{ fontSize: '0.85rem', color: 'var(--danger)', borderColor: 'rgba(220,53,69,0.2)' }}
-          >
-            <LogOut size={16} /> Logout
-          </button>
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+            <button 
+              onClick={() => setActiveTab('ACCOUNT')}
+              className="btn btn-outline" 
+              style={{ fontSize: '0.85rem', color: '#007BFF', borderColor: 'rgba(0,123,255,0.2)' }}
+            >
+              <Settings size={16} /> Edit Profile
+            </button>
+            <button 
+              onClick={() => { signOut(auth); router.push('/'); }}
+              className="btn btn-outline" 
+              style={{ fontSize: '0.85rem', color: 'var(--danger)', borderColor: 'rgba(220,53,69,0.2)' }}
+            >
+              <LogOut size={16} /> Logout
+            </button>
+          </div>
         </div>
 
         {/* 4-Tab Navigation */}

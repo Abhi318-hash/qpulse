@@ -4,6 +4,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { ArrowLeft, ArrowRight, Activity, Sun, Moon, Info } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import LanguageSelector from './LanguageSelector';
 
 // Pages with their own built-in nav — TopNav hides here
 const HIDDEN_ON: (string | RegExp)[] = ['/', /^\/clinic\/[^/]+$/];
@@ -73,7 +74,8 @@ export default function TopNav() {
       </a>
 
       {/* Right tools */}
-      <div style={{ display: 'flex', gap: '0.5rem' }}>
+      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        <LanguageSelector isMobile={false} />
         <Link href="/about" title="About & Bug Reporting" style={{ background: 'var(--btn-glass)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)', padding: '0.5rem', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', minWidth: 36, minHeight: 36 }}>
           <Info size={18} />
         </Link>

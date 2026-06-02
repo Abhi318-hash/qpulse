@@ -7,6 +7,7 @@ import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import Link from 'next/link';
+import LanguageSelector from '@/components/LanguageSelector';
 import React, { useState, useEffect, Suspense, useRef, useMemo, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Settings, Activity, Hospital, MapPin, Search as SearchIcon, Stethoscope, Star, Heart, QrCode, LogOut, Ticket, Loader2, CalendarPlus, X, History, ChevronDown, ChevronUp, Phone, Clock, UserRound, IndianRupee, CheckCircle, ArrowLeft, ArrowRight, Info, Sun, Moon, Bell, FilePlus, Lock, Building } from 'lucide-react';
@@ -488,8 +489,8 @@ function HomeContent() {
               {!isMobile && 'For Providers'}
             </Link>
 
-            {/* Google Translate Widget Placeholder */}
-            <div id="google_translate_element" suppressHydrationWarning style={{ display: 'inline-block', margin: '0 4px', height: 36, overflow: 'hidden' }}></div>
+            {/* Language Selector */}
+            <LanguageSelector isMobile={false} />
 
             {/* Theme toggle */}
             <button onClick={toggleTheme} style={iconBtn} title={isDark ? 'Light mode' : 'Dark mode'} aria-label="Toggle theme">

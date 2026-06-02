@@ -97,6 +97,15 @@ body {
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
+  /* Prevent Google Translate from adding margin to body */
+  top: 0 !important;
+}
+
+/* Hide Google Translate default widget and banner */
+.goog-te-banner-frame.skiptranslate, 
+.goog-te-gadget-icon,
+#google_translate_element {
+  display: none !important;
 }
 
 input, textarea, select {

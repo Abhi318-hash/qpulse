@@ -163,8 +163,12 @@ export const onQueueAdvanced = functions.firestore
         created_at: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      const field = isYourTurn ? 'notifications_sent.your_turn' : 'notifications_sent.near_turn';
-      await db.collection('appointments').doc(apptId).update({ [field]: true });
+      const field = isYourTurn ? 'your_turn' : 'near_turn';
+      await db.collection('appointments').doc(apptId).set({
+        notifications_sent: {
+          [field]: true
+        }
+      }, { merge: true });
     }
   });
 
