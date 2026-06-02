@@ -26,6 +26,12 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   turbopack: {},
+  webpack: (config, { isServer }) => {
+    config.ignoreWarnings = [
+      { module: /node_modules\/@protobufjs\/inquire\/index\.js/ },
+    ];
+    return config;
+  },
   async headers() {
     return [
       {

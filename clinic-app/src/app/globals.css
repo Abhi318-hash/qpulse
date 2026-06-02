@@ -588,6 +588,15 @@ a {
 #goog-gt-tt {
   display: none !important;
 }
+
+/* Hide scrollbar for carousels */
+.hide-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
 /* Remove yellow background highlight on hovered translated text */
 .goog-text-highlight {
   background-color: transparent !important;

@@ -9,7 +9,7 @@ const LANGUAGES = [
   { code: 'mr', label: 'Marathi' }
 ];
 
-export default function LanguageSelector({ isMobile }: { isMobile?: boolean }) {
+export default function LanguageSelector({ isMobile, isDark }: { isMobile?: boolean, isDark?: boolean }) {
   const [currentLang, setCurrentLang] = useState('en');
   const [isOpen, setIsOpen] = useState(false);
 
@@ -36,43 +36,50 @@ export default function LanguageSelector({ isMobile }: { isMobile?: boolean }) {
     window.location.reload();
   };
 
+  const bg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
+  const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
+  const text = isDark ? '#e2e8f0' : '#1a2332';
+  const cardBg = isDark ? '#1a2332' : '#ffffff';
+
   return (
-    <div style={{ position: 'relative', display: 'inline-block' }}>
+    <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
       <button 
         onClick={() => setIsOpen(!isOpen)}
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '0.4rem',
-          background: 'var(--btn-glass, rgba(255,255,255,0.05))',
-          border: '1px solid var(--glass-border, rgba(255,255,255,0.1))',
-          color: 'var(--text-primary, inherit)',
-          padding: isMobile ? '0.5rem' : '0.45rem 0.8rem',
+          gap: '0.75rem',
+          background: 'transparent',
+          border: 'none',
+          color: text,
+          padding: '0.6rem 0.75rem',
           borderRadius: '8px',
           cursor: 'pointer',
           fontFamily: 'inherit',
-          fontSize: '0.8rem',
-          fontWeight: 600,
-          minWidth: 36,
-          minHeight: 36
+          fontSize: '0.85rem',
+          fontWeight: 500,
+          width: '100%',
+          textAlign: 'left'
         }}
+        onMouseOver={e => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}
+        onMouseOut={e => e.currentTarget.style.background = 'transparent'}
         title="Select Language"
       >
         <Globe size={16} />
-        {!isMobile && LANGUAGES.find(l => l.code === currentLang)?.label}
+        {LANGUAGES.find(l => l.code === currentLang)?.label || 'Language'}
       </button>
 
       {isOpen && (
         <div style={{
           position: 'absolute',
           top: '100%',
-          right: 0,
-          marginTop: '0.5rem',
-          background: 'var(--card-bg, #1e1e1e)',
-          border: '1px solid var(--glass-border, rgba(255,255,255,0.1))',
+          left: 0,
+          marginTop: '0.2rem',
+          background: cardBg,
+          border: `1px solid ${border}`,
           borderRadius: '8px',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
-          zIndex: 100,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+          zIndex: 101,
           minWidth: '120px',
           overflow: 'hidden'
         }}>
@@ -85,12 +92,18 @@ export default function LanguageSelector({ isMobile }: { isMobile?: boolean }) {
                 width: '100%',
                 padding: '0.6rem 1rem',
                 textAlign: 'left',
-                background: currentLang === lang.code ? 'rgba(0,123,255,0.1)' : 'transparent',
+                background: currentLang === lang.code ? (isDark ? 'rgba(0,123,255,0.2)' : 'rgba(0,123,255,0.1)') : 'transparent',
                 border: 'none',
-                color: currentLang === lang.code ? '#007BFF' : 'var(--text-primary, #fff)',
+                color: currentLang === lang.code ? '#007BFF' : text,
                 fontFamily: 'inherit',
-                fontSize: '0.9rem',
+                fontSize: '0.85rem',
                 cursor: 'pointer'
+              }}
+              onMouseOver={e => {
+                if (currentLang !== lang.code) e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
+              }}
+              onMouseOut={e => {
+                if (currentLang !== lang.code) e.currentTarget.style.background = 'transparent';
               }}
             >
               {lang.label}

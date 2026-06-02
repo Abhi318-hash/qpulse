@@ -444,9 +444,21 @@ export default function ProfilePage() {
                         <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#1a2332' }}>{record.doctor_name}</h3>
                         <p style={{ margin: 0, fontSize: '0.8rem', color: '#007BFF', fontWeight: 600 }}>{record.specialization}</p>
                       </div>
-                      <div style={{ textAlign: 'right', fontSize: '0.8rem', color: '#5a6a7e' }}>
-                        <p style={{ margin: 0, fontWeight: 700 }}>{dateObj.toLocaleDateString()}</p>
-                        <p style={{ margin: 0 }}>{dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <div style={{ textAlign: 'right', fontSize: '0.8rem', color: '#5a6a7e' }}>
+                          <p style={{ margin: 0, fontWeight: 700 }}>{dateObj.toLocaleDateString()}</p>
+                          <p style={{ margin: 0 }}>{dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                        </div>
+                        {record.clinic_id && (
+                          <button
+                            onClick={() => router.push(`/clinic/${record.clinic_id}`)}
+                            className="btn btn-primary"
+                            style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', height: 'auto', minHeight: 'unset' }}
+                          >
+                            <Calendar size={14} style={{ marginRight: '4px' }} />
+                            Book Again
+                          </button>
+                        )}
                       </div>
                     </div>
 

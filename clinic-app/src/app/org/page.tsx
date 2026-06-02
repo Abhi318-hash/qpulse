@@ -72,6 +72,7 @@ export default function OrgDashboard() {
   const [newDoctorName, setNewDoctorName] = useState('');
   const [newDoctorDegree, setNewDoctorDegree] = useState('');
   const [newSpecialization, setNewSpecialization] = useState('');
+  const [newCity, setNewCity] = useState('');
   const [newLocation, setNewLocation] = useState('');
   const [newFees, setNewFees] = useState('500');
   const [newAuthPhone, setNewAuthPhone] = useState('');
@@ -190,6 +191,7 @@ export default function OrgDashboard() {
         doctor_name: newDoctorName,
         dr_degree: newDoctorDegree || 'MBBS',
         specialization: newSpecialization || 'General Physician',
+        city: newCity || '',
         location: newLocation || 'Main Center',
         fees: parseFloat(newFees) || 500,
         authorized_phone: finalPhone,
@@ -656,6 +658,14 @@ export default function OrgDashboard() {
 
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '0.8rem' }}>
                 <div>
+                  <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>City</label>
+                  <input 
+                    type="text" className="input-field" required
+                    value={newCity} onChange={e => setNewCity(e.target.value)}
+                    placeholder="e.g. Mumbai" 
+                  />
+                </div>
+                <div>
                   <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Room / Location Details</label>
                   <input 
                     type="text" className="input-field"
@@ -663,6 +673,9 @@ export default function OrgDashboard() {
                     placeholder="2nd Floor, Room 204" 
                   />
                 </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.8rem' }}>
                 <div>
                   <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Fees (₹)</label>
                   <input 
