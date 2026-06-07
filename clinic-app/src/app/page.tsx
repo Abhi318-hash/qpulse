@@ -588,9 +588,10 @@ function HomeContent() {
     () =>
       clinics.filter(
         (c) =>
-          c.name?.toLowerCase().includes(search.toLowerCase()) ||
+          !c.is_hidden &&
+          (c.name?.toLowerCase().includes(search.toLowerCase()) ||
           c.doctor_name?.toLowerCase().includes(search.toLowerCase()) ||
-          c.location?.toLowerCase().includes(search.toLowerCase()),
+          c.location?.toLowerCase().includes(search.toLowerCase())),
       ),
     [clinics, search],
   );
@@ -1934,63 +1935,6 @@ function HomeContent() {
             }}
           >
             <Building size={15} /> For Providers
-          </Link>
-          <span
-            style={{
-              width: 4,
-              height: 4,
-              borderRadius: "50%",
-              background: "#dee2e8",
-            }}
-          />
-          <Link
-            href="/login"
-            style={{
-              fontSize: "0.85rem",
-              color: "#5a6a7e",
-              textDecoration: "none",
-              fontWeight: 600,
-            }}
-          >
-            Org Admin
-          </Link>
-          <span
-            style={{
-              width: 4,
-              height: 4,
-              borderRadius: "50%",
-              background: "#dee2e8",
-            }}
-          />
-          <Link
-            href="/clinic/login"
-            style={{
-              fontSize: "0.85rem",
-              color: "#5a6a7e",
-              textDecoration: "none",
-              fontWeight: 600,
-            }}
-          >
-            Staff Login
-          </Link>
-          <span
-            style={{
-              width: 4,
-              height: 4,
-              borderRadius: "50%",
-              background: "#dee2e8",
-            }}
-          />
-          <Link
-            href="/onboard"
-            style={{
-              fontSize: "0.85rem",
-              color: "#5a6a7e",
-              textDecoration: "none",
-              fontWeight: 600,
-            }}
-          >
-            Register Clinic
           </Link>
           <div style={{ flexBasis: "100%", height: 0 }}></div>
           <span

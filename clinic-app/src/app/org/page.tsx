@@ -14,7 +14,7 @@ import {
   Building, Stethoscope, Users, CreditCard, Plus, 
   ArrowUpRight, Loader2, LogOut, Settings, HelpCircle, 
   Power, PowerOff, Shield, AlertTriangle, CheckCircle, X,
-  TrendingUp, BarChart2, Hospital
+  TrendingUp, BarChart2, Hospital, Eye, EyeOff
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -177,7 +177,7 @@ export default function OrgDashboard() {
     // Enforce Plan Limits
     const maxClinics = org.max_clinics || 1;
     if (clinics.length >= maxClinics) {
-      alert(`Plan limit exceeded! Your current ${org.plan.toUpperCase()} plan supports a maximum of ${maxClinics} clinic(s). Please upgrade your plan under the Billing tab.`);
+      alert(`Plan limit exceeded! Your current ${org.plan.toUpperCase()} plan supports a maximum of ${maxClinics} clinic(s). Please contact support to upgrade.`);
       return;
     }
 
@@ -243,6 +243,18 @@ export default function OrgDashboard() {
     } catch (err) {
       console.error(err);
       alert('Failed to update clinic status.');
+    }
+  };
+
+  const handleToggleVisibility = async (clinicId: string, currentHidden: boolean) => {
+    try {
+      await updateDoc(doc(db, 'clinics', clinicId), {
+        is_hidden: !currentHidden,
+        updated_at: serverTimestamp()
+      });
+    } catch (err) {
+      console.error(err);
+      alert('Failed to update clinic visibility.');
     }
   };
 
@@ -344,9 +356,6 @@ export default function OrgDashboard() {
           <Link href="/org/analytics" className="btn btn-outline" style={{ fontSize: '0.82rem', padding: '0.5rem 0.9rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
             <TrendingUp size={14} /> Org Analytics
           </Link>
-          <Link href="/billing" className="btn btn-outline" style={{ fontSize: '0.82rem', padding: '0.5rem 0.9rem' }}>
-            <CreditCard size={14} /> Plan &amp; Billing
-          </Link>
           <button 
             onClick={() => { signOut(auth); router.push('/'); }}
             className="btn btn-outline" 
@@ -370,9 +379,8 @@ export default function OrgDashboard() {
             <AlertTriangle size={20} />
             <div style={{ flex: 1 }}>
               <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: 700 }}>WORKSPACE SUSPENDED</p>
-              <p style={{ margin: 0, fontSize: '0.78rem', color: '#5a6a7e' }}>Your billing cycle expired or payment failed. Patients cannot book tokens until plan is renewed.</p>
+              <p style={{ margin: 0, fontSize: '0.78rem', color: '#5a6a7e' }}>Your workspace has been suspended. Please contact support.</p>
             </div>
-            <Link href="/billing" className="btn" style={{ background: '#dc3545', color: 'white', fontSize: '0.75rem', padding: '0.4rem 0.8rem' }}>Pay Now</Link>
           </div>
         )}
 
@@ -467,18 +475,34 @@ export default function OrgDashboard() {
                     <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800 }}>{clinic.name}</h3>
                     <p style={{ margin: 0, fontSize: '0.78rem', color: '#5a6a7e' }}>Dr. {clinic.doctor_name} · {clinic.specialization}</p>
                   </div>
-                  <button 
-                    onClick={() => handleToggleClinic(clinic.id, clinic.is_open)}
-                    className="btn" 
-                    style={{
-                      padding: '0.35rem 0.75rem', fontSize: '0.75rem', fontWeight: 700,
-                      background: clinic.is_open ? 'rgba(40,167,69,0.1)' : 'rgba(220,53,69,0.1)',
-                      color: clinic.is_open ? '#28a745' : '#dc3545',
-                      border: `1px solid ${clinic.is_open ? 'rgba(40,167,69,0.2)' : 'rgba(220,53,69,0.2)'}`
-                    }}
-                  >
-                    {clinic.is_open ? 'Open' : 'Closed'}
-                  </button>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <button 
+                      onClick={() => handleToggleVisibility(clinic.id, clinic.is_hidden)}
+                      className="btn" 
+                      style={{
+                        padding: '0.35rem 0.75rem', fontSize: '0.75rem', fontWeight: 700,
+                        background: 'rgba(255,255,255,0.05)',
+                        color: clinic.is_hidden ? '#6c757d' : '#007BFF',
+                        border: '1px solid rgba(0,0,0,0.1)',
+                        display: 'flex', alignItems: 'center', gap: '0.25rem'
+                      }}
+                      title={clinic.is_hidden ? "Hidden from patients" : "Visible to patients"}
+                    >
+                      {clinic.is_hidden ? <EyeOff size={14}/> : <Eye size={14}/>} {clinic.is_hidden ? 'Hidden' : 'Visible'}
+                    </button>
+                    <button 
+                      onClick={() => handleToggleClinic(clinic.id, clinic.is_open)}
+                      className="btn" 
+                      style={{
+                        padding: '0.35rem 0.75rem', fontSize: '0.75rem', fontWeight: 700,
+                        background: clinic.is_open ? 'rgba(40,167,69,0.1)' : 'rgba(220,53,69,0.1)',
+                        color: clinic.is_open ? '#28a745' : '#dc3545',
+                        border: `1px solid ${clinic.is_open ? 'rgba(40,167,69,0.2)' : 'rgba(220,53,69,0.2)'}`
+                      }}
+                    >
+                      {clinic.is_open ? 'Open' : 'Closed'}
+                    </button>
+                  </div>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', padding: '0.75rem', background: '#f8fafc', borderRadius: 10, border: '1px solid #eef0f3', marginBottom: '1.25rem' }}>
@@ -534,9 +558,6 @@ export default function OrgDashboard() {
               <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#dc3545', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                 <AlertTriangle size={14} /> API Access is disabled on your current plan ({org?.plan?.toUpperCase()}). Upgrade to PRO or ENTERPRISE to enable integration.
               </span>
-              <Link href="/billing" className="btn btn-primary" style={{ display: 'inline-block', marginTop: '1rem', padding: '0.4rem 0.8rem', fontSize: '0.75rem' }}>
-                Upgrade Now
-              </Link>
             </div>
           ) : (
             <div style={{ background: '#f8fafc', padding: '1.25rem', borderRadius: 12, border: '1px solid #eef0f3' }}>
@@ -698,7 +719,7 @@ export default function OrgDashboard() {
               {hospitals.length > 0 && (
                 <div>
                   <label style={{ fontSize: '0.72rem', color: '#5a6a7e', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.4rem', display: 'block' }}>Link to Hospital Branch <span style={{ fontWeight: 400, textTransform: 'none' }}>(optional)</span></label>
-                  <select className="input-field" style={{ height: 46 }} value={newClinicHospitalId} onChange={e => setNewClinicHospitalId(e.target.value)}>
+                  <select className="input-field" style={{ height: 46, background: '#fff', color: '#1a2332' }} value={newClinicHospitalId} onChange={e => setNewClinicHospitalId(e.target.value)}>
                     <option value="none">— Standalone clinic (no hospital) —</option>
                     {hospitals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
                   </select>

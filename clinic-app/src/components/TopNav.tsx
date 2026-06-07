@@ -86,12 +86,12 @@ export default function TopNav() {
         {showDropdown && (
           <div style={{
             position: 'absolute', top: '100%', right: 0, marginTop: '0.5rem',
-            background: 'var(--card-bg, #1e1e1e)', border: '1px solid var(--glass-border, rgba(255,255,255,0.1))',
+            background: theme === 'dark' ? '#1e1e1e' : '#ffffff', border: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
             borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
             zIndex: 100, minWidth: '200px', overflow: 'hidden', display: 'flex', flexDirection: 'column'
           }}>
-            <div style={{ padding: '0.75rem', borderBottom: '1px solid var(--glass-border)' }}>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Settings & Options</span>
+            <div style={{ padding: '0.75rem', borderBottom: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}` }}>
+              <span style={{ fontSize: '0.75rem', color: theme === 'dark' ? '#94a3b8' : '#5a6a7e' }}>Settings & Options</span>
             </div>
             
             <div style={{ padding: '0.5rem' }}>
@@ -100,7 +100,7 @@ export default function TopNav() {
 
             <button onClick={toggleTheme} style={{
               display: 'flex', alignItems: 'center', gap: '0.75rem', width: '100%', padding: '0.75rem 1rem',
-              background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer',
+              background: 'none', border: 'none', color: theme === 'dark' ? '#e2e8f0' : '#1a2332', cursor: 'pointer',
               textAlign: 'left', fontSize: '0.9rem'
             }}>
               {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
@@ -109,7 +109,7 @@ export default function TopNav() {
 
             <Link href="/about" onClick={() => setShowDropdown(false)} style={{
               display: 'flex', alignItems: 'center', gap: '0.75rem', width: '100%', padding: '0.75rem 1rem',
-              color: 'var(--text-primary)', textDecoration: 'none', fontSize: '0.9rem'
+              color: theme === 'dark' ? '#e2e8f0' : '#1a2332', textDecoration: 'none', fontSize: '0.9rem'
             }}>
               <Info size={16} /> About Q-PULSE
             </Link>
@@ -117,8 +117,8 @@ export default function TopNav() {
             {currentUser && (
               <button onClick={() => { signOut(auth); setShowDropdown(false); router.push('/'); }} style={{
                 display: 'flex', alignItems: 'center', gap: '0.75rem', width: '100%', padding: '0.75rem 1rem',
-                background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer',
-                textAlign: 'left', fontSize: '0.9rem', borderTop: '1px solid var(--glass-border)'
+                background: 'none', border: 'none', color: '#dc3545', cursor: 'pointer',
+                textAlign: 'left', fontSize: '0.9rem', borderTop: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`
               }}>
                 <LogOut size={16} /> Logout
               </button>

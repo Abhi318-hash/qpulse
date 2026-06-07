@@ -26,7 +26,7 @@ export default function AboutPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', marginBottom: '4rem' }}>
           
           {/* Org Admin Portal */}
-          <Link href="/login" style={{ textDecoration: 'none' }}>
+          <Link href="/onboard" style={{ textDecoration: 'none' }}>
             <div className="glass-container hover-lift" style={{ padding: '2rem', height: '100%', display: 'flex', flexDirection: 'column', transition: 'all 0.3s' }}>
               <div style={{ background: 'rgba(0, 123, 255, 0.1)', width: 50, height: 50, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1rem' }}>
                 <Building size={24} color="#007BFF" />
