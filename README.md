@@ -1,3 +1,5 @@
+**https://wooble.org/project/qpulse-skip-the-waitstay-in-the-pulse**
+
 🏥 Q-PULSE — Project Breakdown
 What is it?
 Q-PULSE is a live clinic patient queue tracker. Its tagline is "Skip the wait, stay in the pulse." It lets patients check how many people are currently waiting at a clinic before showing up — in real time.
