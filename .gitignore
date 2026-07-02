@@ -1,0 +1,4 @@
+chrome-profile/
+chrome_out.log
+node_modules/
+.env*
