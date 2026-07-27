@@ -38,6 +38,7 @@ export const viewport: Viewport = {
 };
 
 import Script from 'next/script';
+import TelemetryTracker from "@/components/TelemetryTracker";
 
 export default function RootLayout({
   children,
@@ -66,6 +67,7 @@ export default function RootLayout({
       </head>
       <body suppressHydrationWarning={true} className={`${outfit.variable} ${inter.variable}`}>
         <AppCheckProvider>
+          <TelemetryTracker />
           <TopNav />
           {children}
         </AppCheckProvider>

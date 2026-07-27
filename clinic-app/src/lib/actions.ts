@@ -16,6 +16,7 @@ import {
   runTransaction, writeBatch,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { sendTelemetryEvent } from './telemetry';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // COLLECTION NAMES — single source of truth
@@ -273,6 +274,12 @@ export async function addPatientToken(
       updated_at:        serverTimestamp(),
     });
 
+    try {
+      sendTelemetryEvent('join_queue', { clinicId, bookingSource });
+    } catch (e) {
+      console.debug('Failed to send join_queue telemetry', e);
+    }
+
     return newApptRef.id;
   });
 }
@@ -396,6 +403,12 @@ export async function advanceTokenQueue(
     currently_serving_token:   nextTokenDisplay,
     updated_at:                serverTimestamp(),
   });
+
+  try {
+    sendTelemetryEvent('advance_queue', { clinicId, completedAppointmentId });
+  } catch (e) {
+    console.debug('Failed to send advance_queue telemetry', e);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -561,6 +574,12 @@ export async function cancelUserToken(clinicId: string, appointmentId: string) {
     patient_count: increment(-1),
     updated_at:    serverTimestamp(),
   });
+
+  try {
+    sendTelemetryEvent('cancel_token', { clinicId, appointmentId });
+  } catch (e) {
+    console.debug('Failed to send cancel_token telemetry', e);
+  }
 }
 
 export async function getUserMedicalHistory(userPhone: string, limitCount: number = 50) {
