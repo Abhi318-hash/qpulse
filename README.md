@@ -2,75 +2,69 @@
 
 **https://wooble.org/in/abhishekpatil9021193dfc/projects/e26a51b5-3075-42bf-9e6d-1dfb3d59b278?ref=copy**
 
-🏥 Q-PULSE — Project Breakdown
-What is it?
-Q-PULSE is a live clinic patient queue tracker. Its tagline is "Skip the wait, stay in the pulse." It lets patients check how many people are currently waiting at a clinic before showing up — in real time.
-________________________________________
-👥 Who is it For? (3 User Roles)
-Role	URL	Access
-Public / Patient	/	View live queue counts for all clinics
-Admin	/admin	Password-protected portal to manage clinics
-Clinic Recipient	/clinic/[id]?secret=xxx	Secret-link terminal for clinic staff to update queues
-________________________________________
-🛠️ Tech Stack
-Layer	Technology
-Framework	Next.js 16 (App Router)
+## What this is
+Q-PULSE is a TypeScript Next.js clinic patient queue tracker that lets patients check real-time wait lengths before they arrive and lets clinics manage queues. The frontend is a Next.js (App Router) TypeScript React app and the backend uses Firebase (Firestore + Cloud Functions + FCM) for realtime data, rules, and server-side logic.
 
-Language	TypeScript + React 19
-Database (Cloud)	Turso — hosted LibSQL (SQLite-compatible)
+### Stack
+- **Language(s):** TypeScript (primary), small JS/CSS
+- **Framework / runtime:** Next.js (App Router) + React; Firebase (Firestore, Cloud Functions, FCM)
+- **Notable libraries / systems that shape the code:** Next.js (App Router), React/TSX components, Firebase SDK (client-side + admin/functions), Firestore security rules & indexes, server-side functions (TypeScript)
 
-Database (Local Dev)	better-sqlite3 → clinic.db file
-DB Client	@libsql/client
-Icons	lucide-react
-Styling	Vanilla CSS with glassmorphism dark-mode design
-Hosting	Vercel (environment vars in .env.local)
-________________________________________
-🔧 How the Backend Works
-There is no separate backend server. Everything runs inside Next.js using Server Actions ('use server'), which are server-side functions callable directly from client components.
-📁 File: src/lib/db.ts — Database Layer
-TURSO_URL + TURSO_TOKEN  ──→  @libsql/client  ──→  Turso cloud DB
-                     (falls back to local clinic.db if no env vars)
-•	On startup, initDb() runs and creates the clinics table if it doesn't exist.
-•	Uses non-destructive migrations — wraps ALTER TABLE in try/catch so re-runs don't crash.
-Schema: clinics table
-Column	Type	Purpose
-id	TEXT (UUID)	Primary key
-name	TEXT	Clinic display name
-doctor_name	TEXT	Primary doctor (editable by recipient)
-location	TEXT	Clinic location
-is_open	BOOLEAN	Whether clinic is accepting patients
-is_hidden	BOOLEAN	Soft-delete — hides from public view
-patient_count	INTEGER	Live queue count
-recipient_secret	TEXT	Short UUID used as access password
-created_at	TIMESTAMP	Creation time
-________________________________________
-📁 File: src/lib/actions.ts — Backend Logic (Server Actions)
-All backend functions live here, marked 'use server'. They run on the server, never exposed to the browser.
-Admin Actions (no secret needed — just password check):
-•	verifyAdminPassword(password) — compares against ADMIN_PASSWORD env var
-•	addClinic(name, doctorName, location) — inserts new clinic, auto-generates a recipientSecret
-•	hideClinic(id) / unhideClinic(id) — soft delete/restore
-Recipient Actions (all require secret verification):
-•	incrementPatient(id, secret) — adds 1 to queue
-•	decrementPatient(id, secret) — subtracts 1 (floor = 0, never negative)
-•	toggleClinicStatus(id, secret) — flips is_open 0↔1
-•	updateDoctorName(id, secret, name) — lets clinic staff update their doc's name
-Query Functions:
-•	getClinics() — public view, filters is_hidden = 0
-•	getClinicsAdmin() — admin view, returns ALL clinics including hidden
-•	getClinic(id) — fetch a single clinic by ID
-After every mutation, revalidatePath('/') and revalidatePath('/admin') are called to bust Next.js's cache and force a data refresh.
-________________________________________
-🗺️ Page Architecture
-/                    → Public dashboard (polls every 10s, search by clinic/doctor/location)
-/admin               → Admin portal (password gate → manage clinics, copy recipient links)
-/clinic/[id]         → Recipient terminal (secret in URL query param → +/- queue, toggle open/closed)
-________________________________________
-🔐 Security Model
-Concern	How it's handled
-Admin access	Single shared password in ADMIN_PASSWORD env var
-Recipient access	Per-clinic recipient_secret (short UUID), passed as ?secret= in URL
-Data visibility	is_hidden flag separates public vs admin views at the DB query level
-Patient count floor	MAX(0, patient_count - 1) in SQL prevents negatives
-________________________________________
-In summary: Q-PULSE is a full-stack Next.js app where the entire backend is a single actions.ts file of server actions connecting to a Turso cloud SQLite database, serving three distinct user roles with no separate API server needed.
+## How it's organized
+Top-level important entries (annotated):
+```
+README.md                  repo overview and usage
+.gitignore
+clinic-app/                main Next.js + Firebase application
+  .firebaserc              firebase project mapping
+  firebase.json            Firebase hosting / functions config
+  firestore.rules          Firestore security rules
+  firestore.indexes.json   Firestore indexes
+  next.config.ts
+  package.json
+  tsconfig.json
+  public/                  static assets
+  src/
+    app/                   Next.js App Router routes & pages (page.tsx, layout.tsx, globals.css)
+      about/ admin/ clinic/ consult/ login/ onboard/ org/ profile/ super-admin/ etc.
+      page.tsx
+      error.tsx
+    components/            shared UI (TopNav, PhoneAuth, LanguageSelector, DoctorAvatar, telemetry)
+    lib/                   app logic & integrations (firebase.ts, fcm.ts, actions.ts, patientActions.ts, generatePrescriptionPDF.ts)
+  functions/               Firebase Cloud Functions (TypeScript, src/index.ts)
+```
+
+How it fits together:
+- The Next.js app under clinic-app/src is the public UI (patients, admins, clinics). UI components call functions in src/lib to interact with Firestore and Firebase services.
+- clinic-app/src/lib contains the client-side Firebase setup, patient/admin action logic, and utilities (including PDF generation and telemetry).
+- clinic-app/functions contains server-side TypeScript functions (Firebase Functions) for tasks that require privileged access or background processing (deployed with Firebase).
+- Firestore rules and indexes live at the repo root of clinic-app to enforce security and optimize queries; firebase.json/.firebaserc configure hosting and functions.
+
+## How to run it
+Shortest path (local dev, assuming you have Node.js, npm, and Firebase tools installed):
+
+1. Frontend (Next.js app)
+```
+git clone https://github.com/Abhi318-hash/qpulse.git
+cd qpulse/clinic-app
+npm install
+npm run dev
+# opens at http://localhost:3000 by default (Next.js)
+```
+
+2. Functions (Firebase Cloud Functions)
+```
+cd clinic-app/functions
+npm install
+# build if there's a TypeScript build step (e.g. npm run build)
+# run locally with the Firebase emulator:
+firebase emulators:start --only functions,firestore,hosting
+# or deploy:
+firebase deploy --only functions,hosting,firestore
+```
+
+Required / recommended environment and credentials (obvious from repo layout):
+- Firebase project configuration (API keys / authDomain / projectId) for clinic-app/src/lib/firebase.ts.
+- Service account / Firebase credentials for deploying or running admin Cloud Functions.
+- FCM credentials for push notifications (used by fcm.ts).
+- Any environment variables referenced in package.json or next.config.ts (check those files before running).
