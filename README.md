@@ -1,4 +1,4 @@
-**https://wooble.org/project/qpulse-skip-the-waitstay-in-the-pulse**
+**https://wooble.org/in/abhishekpatil9021193dfc/projects/e26a51b5-3075-42bf-9e6d-1dfb3d59b278?ref=copy**
 
 🏥 Q-PULSE — Project Breakdown
 What is it?
